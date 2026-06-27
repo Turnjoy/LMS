@@ -1,0 +1,508 @@
+from datetime import datetime
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import UserMixin
+from sqlalchemy.ext.hybrid import hybrid_property
+from werkzeug.security import generate_password_hash, check_password_hash
+
+db = SQLAlchemy()
+
+
+class Tenant(db.Model):
+    """Represents a school/tenant in the multi-tenant system."""
+    __tablename__ = 'tenants'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    subdomain = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    custom_domain = db.Column(db.String(255), unique=True, index=True)
+    logo_url = db.Column(db.String(255))
+    primary_color = db.Column(db.String(7), default='#3498db')
+    secondary_color = db.Column(db.String(7), default='#2ecc71')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    users = db.relationship('User', backref='tenant', lazy='dynamic', cascade='all, delete-orphan')
+    classes = db.relationship('Class', backref='tenant', lazy='dynamic', cascade='all, delete-orphan')
+    subjects = db.relationship('Subject', backref='tenant', lazy='dynamic', cascade='all, delete-orphan')
+    terms = db.relationship('Term', backref='tenant', lazy='dynamic', cascade='all, delete-orphan')
+    ai_settings = db.relationship('TenantAISetting', backref='tenant', uselist=False, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Tenant {self.name}>'
+
+
+class TenantAISetting(db.Model):
+    """Stores school-specific AI configuration for a tenant."""
+    __tablename__ = 'tenant_ai_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, unique=True, index=True)
+    provider = db.Column(db.String(50), default='openai')
+    model_name = db.Column(db.String(100), default='gpt-4o-mini')
+    assistant_name = db.Column(db.String(100), default='School AI Assistant')
+    system_prompt = db.Column(db.Text)
+    enabled_for_teachers = db.Column(db.Boolean, default=True)
+    enabled_for_students = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<TenantAISetting {self.tenant_id} {self.provider}:{self.model_name}>'
+
+
+class TenantPublicProfile(db.Model):
+    """Public homepage content for each school."""
+    __tablename__ = 'tenant_public_profiles'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, unique=True, index=True)
+    headline = db.Column(db.String(160), default='Welcome to our school')
+    about = db.Column(db.Text)
+    admission_message = db.Column(db.Text)
+    admission_open = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref=db.backref('public_profile', uselist=False, cascade='all, delete-orphan'))
+
+
+class PaymentGatewaySetting(db.Model):
+    """School-specific payment gateway configuration."""
+    __tablename__ = 'payment_gateway_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, unique=True, index=True)
+    provider = db.Column(db.String(50), default='manual')
+    public_key = db.Column(db.String(255))
+    secret_key = db.Column(db.String(255))
+    currency = db.Column(db.String(10), default='NGN')
+    payment_instructions = db.Column(db.Text)
+    require_payment_for_portal = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref=db.backref('payment_settings', uselist=False, cascade='all, delete-orphan'))
+
+
+class AdmissionApplication(db.Model):
+    """Public admission request reviewed by a school admin."""
+    __tablename__ = 'admission_applications'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    applicant_name = db.Column(db.String(120), nullable=False)
+    parent_name = db.Column(db.String(120), nullable=False)
+    parent_email = db.Column(db.String(120), nullable=False, index=True)
+    parent_phone = db.Column(db.String(30), nullable=False)
+    requested_class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    previous_school = db.Column(db.String(160))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), default='pending', index=True)
+    admin_note = db.Column(db.Text)
+    created_student_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reviewed_at = db.Column(db.DateTime)
+
+    tenant = db.relationship('Tenant', backref='admission_applications')
+    requested_class = db.relationship('Class')
+    created_student = db.relationship('User', foreign_keys=[created_student_id])
+
+
+class StudentTermAccess(db.Model):
+    """Controls whether a student can open the portal for a term."""
+    __tablename__ = 'student_term_access'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'), nullable=False)
+    amount_due = db.Column(db.Float, default=0.0)
+    amount_paid = db.Column(db.Float, default=0.0)
+    is_paid = db.Column(db.Boolean, default=False)
+    portal_unlocked = db.Column(db.Boolean, default=False)
+    payment_reference = db.Column(db.String(120))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    student = db.relationship('User', foreign_keys=[student_id])
+    term = db.relationship('Term')
+
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'term_id', name='unique_student_term_access'),
+        db.Index('idx_student_term_access_tenant', 'tenant_id'),
+    )
+
+
+class SchoolSetupPreference(db.Model):
+    """Stores guided setup choices for a tenant."""
+    __tablename__ = 'school_setup_preferences'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, unique=True, index=True)
+    setup_mode = db.Column(db.String(20), default='hybrid')  # automatic or hybrid
+    school_type = db.Column(db.String(30), default='combined')
+    sections = db.Column(db.JSON)
+    arms = db.Column(db.JSON)
+    sss_tracks = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref=db.backref('setup_preference', uselist=False, cascade='all, delete-orphan'))
+
+
+class ClassSubject(db.Model):
+    """Subjects offered by a class for student term registration."""
+    __tablename__ = 'class_subjects'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subjects.id'), nullable=False)
+    is_required = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class_obj = db.relationship('Class')
+    subject = db.relationship('Subject')
+
+    __table_args__ = (
+        db.UniqueConstraint('class_id', 'subject_id', name='unique_class_subject'),
+        db.Index('idx_class_subject_tenant', 'tenant_id'),
+    )
+
+
+class StudentTermRegistration(db.Model):
+    """Subjects selected by a returning student for a term."""
+    __tablename__ = 'student_term_registrations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subjects.id'), nullable=False)
+    status = db.Column(db.String(20), default='submitted')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    student = db.relationship('User', foreign_keys=[student_id])
+    term = db.relationship('Term')
+    class_obj = db.relationship('Class')
+    subject = db.relationship('Subject')
+
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'term_id', 'subject_id', name='unique_student_term_subject'),
+        db.Index('idx_student_registration_tenant', 'tenant_id'),
+    )
+
+
+class User(UserMixin, db.Model):
+    """Represents a user in the system with role-based access."""
+    __tablename__ = 'users'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False)  # 'admin', 'teacher', 'student', 'attendant'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    # Relationships
+    teacher_assignments = db.relationship('TeacherAssignment', backref='teacher', lazy='dynamic', cascade='all, delete-orphan')
+    student_classes = db.relationship('StudentClass', backref='student', lazy='dynamic', cascade='all, delete-orphan')
+    attendance_records = db.relationship('Attendance', foreign_keys='Attendance.marked_by', backref='marker', lazy='dynamic')
+    student_attendance = db.relationship('Attendance', foreign_keys='Attendance.student_id', backref='student_attendance', lazy='dynamic')
+    results_inputted = db.relationship('Result', foreign_keys='Result.inputted_by', backref='inputter', lazy='dynamic')
+    student_results = db.relationship('Result', foreign_keys='Result.student_id', backref='student_result', lazy='dynamic')
+    
+    # Parent relationship (if user is a parent)
+    children_associations = db.relationship('StudentParent', backref='parent', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def set_password(self, password):
+        """Hash and set the user's password."""
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        """Verify the user's password."""
+        return check_password_hash(self.password_hash, password)
+    
+    def __repr__(self):
+        return f'<User {self.name} ({self.role})>'
+
+
+class Class(db.Model):
+    """Represents a class/grade in a school."""
+    __tablename__ = 'classes'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    name = db.Column(db.String(50), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    student_classes = db.relationship('StudentClass', backref='class_obj', lazy='dynamic', cascade='all, delete-orphan')
+    teacher_assignments = db.relationship('TeacherAssignment', backref='class_obj', lazy='dynamic', cascade='all, delete-orphan')
+    attendance_records = db.relationship('Attendance', backref='class_obj', lazy='dynamic', cascade='all, delete-orphan')
+    results = db.relationship('Result', backref='class_obj', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Class {self.name}>'
+
+
+class Subject(db.Model):
+    """Represents a subject taught in the school."""
+    __tablename__ = 'subjects'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    teacher_assignments = db.relationship('TeacherAssignment', backref='subject', lazy='dynamic', cascade='all, delete-orphan')
+    results = db.relationship('Result', backref='subject', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Subject {self.name}>'
+
+
+class Term(db.Model):
+    """Represents an academic term/session."""
+    __tablename__ = 'terms'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    name = db.Column(db.String(50), nullable=False)
+    session = db.Column(db.String(20), nullable=False)
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    student_classes = db.relationship('StudentClass', backref='term', lazy='dynamic', cascade='all, delete-orphan')
+    teacher_assignments = db.relationship('TeacherAssignment', backref='term', lazy='dynamic', cascade='all, delete-orphan')
+    results = db.relationship('Result', backref='term', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Term {self.name} - {self.session}>'
+
+
+class StudentClass(db.Model):
+    """Many-to-many relationship between students and classes for a specific term."""
+    __tablename__ = 'student_classes'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Unique constraint to prevent duplicate enrollments
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'class_id', 'term_id', name='unique_student_class_term'),
+        db.Index('idx_student_class_tenant', 'tenant_id'),
+    )
+    
+    def __repr__(self):
+        return f'<StudentClass Student:{self.student_id} Class:{self.class_id} Term:{self.term_id}>'
+
+
+class TeacherAssignment(db.Model):
+    """Assigns teachers to teach specific subjects in specific classes for a term."""
+    __tablename__ = 'teacher_assignments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subjects.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Unique constraint to prevent duplicate assignments
+    __table_args__ = (
+        db.UniqueConstraint('teacher_id', 'class_id', 'subject_id', 'term_id', name='unique_teacher_assignment'),
+        db.Index('idx_teacher_assignment_tenant', 'tenant_id'),
+    )
+    
+    def __repr__(self):
+        return f'<TeacherAssignment Teacher:{self.teacher_id} Class:{self.class_id} Subject:{self.subject_id}>'
+
+
+class Parent(db.Model):
+    """Represents a parent/guardian."""
+    __tablename__ = 'parents'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    phone = db.Column(db.String(20))
+    address = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref='parent_profile', foreign_keys=[user_id])
+    student_associations = db.relationship('StudentParent', backref='parent_user', lazy='dynamic', cascade='all, delete-orphan')
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', name='unique_parent_user'),
+    )
+    
+    def __repr__(self):
+        return f'<Parent {self.user_id}>'
+
+
+class StudentParent(db.Model):
+    """Many-to-many relationship between students and parents."""
+    __tablename__ = 'student_parents'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('parents.id'), nullable=False)
+    relationship = db.Column(db.String(20), default='parent')  # 'father', 'mother', 'guardian'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Unique constraint to prevent duplicate relationships
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'parent_id', name='unique_student_parent'),
+        db.Index('idx_student_parent_tenant', 'tenant_id'),
+    )
+    
+    def __repr__(self):
+        return f'<StudentParent Student:{self.student_id} Parent:{self.parent_id}>'
+
+
+class Attendance(db.Model):
+    """Records student attendance."""
+    __tablename__ = 'attendance'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False)  # 'present', 'absent', 'late', 'excused'
+    marked_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    remarks = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Unique constraint to prevent duplicate attendance records
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'class_id', 'date', name='unique_attendance_record'),
+        db.Index('idx_attendance_date_tenant', 'date', 'tenant_id'),
+    )
+    
+    def __repr__(self):
+        return f'<Attendance Student:{self.student_id} {self.status} on {self.date}>'
+
+
+class Result(db.Model):
+    """Stores student academic results."""
+    __tablename__ = 'results'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subjects.id'), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'), nullable=False)
+    ca_score = db.Column(db.Float, default=0.0)
+    exam_score = db.Column(db.Float, default=0.0)
+    is_published = db.Column(db.Boolean, default=False)
+    inputted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    remarks = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint to prevent duplicate results
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'subject_id', 'class_id', 'term_id', name='unique_result_record'),
+        db.Index('idx_result_tenant', 'tenant_id'),
+    )
+    
+    @hybrid_property
+    def total_score(self):
+        """Dynamic property to calculate total score (CA + Exam)."""
+        return self.ca_score + self.exam_score
+    
+    @total_score.expression
+    def total_score(cls):
+        """SQL expression for total score."""
+        return cls.ca_score + cls.exam_score
+    
+    def __repr__(self):
+        return f'<Result Student:{self.student_id} Subject:{self.subject_id} Total:{self.total_score}>'
+
+
+class Assignment(db.Model):
+    """Represents an assignment created by a teacher."""
+    __tablename__ = 'assignments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    assignment_type = db.Column(db.String(20), nullable=False)  # 'written', 'quiz'
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subjects.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    due_date = db.Column(db.DateTime)
+    total_marks = db.Column(db.Float, default=100.0)
+    is_published = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    questions = db.relationship('QuizQuestion', backref='assignment', lazy='dynamic', cascade='all, delete-orphan')
+    submissions = db.relationship('AssignmentSubmission', backref='assignment', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Assignment {self.title}>'
+
+
+class QuizQuestion(db.Model):
+    """Represents a question in a quiz assignment."""
+    __tablename__ = 'quiz_questions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey('assignments.id'), nullable=False)
+    question_text = db.Column(db.Text, nullable=False)
+    question_type = db.Column(db.String(20), default='multiple_choice')  # 'multiple_choice', 'true_false', 'short_answer'
+    options = db.Column(db.JSON)  # Store options for multiple choice questions
+    correct_answer = db.Column(db.String(500))
+    marks = db.Column(db.Float, default=1.0)
+    order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<QuizQuestion {self.id}>'
+
+
+class AssignmentSubmission(db.Model):
+    """Represents a student's submission for an assignment."""
+    __tablename__ = 'assignment_submissions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey('assignments.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    submission_text = db.Column(db.Text)
+    quiz_answers = db.Column(db.JSON)  # Store answers for quiz submissions
+    score = db.Column(db.Float)
+    submitted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    graded_at = db.Column(db.DateTime)
+    graded_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    feedback = db.Column(db.Text)
+    
+    # Unique constraint to prevent duplicate submissions
+    __table_args__ = (
+        db.UniqueConstraint('assignment_id', 'student_id', name='unique_assignment_submission'),
+        db.Index('idx_submission_tenant', 'tenant_id'),
+    )
+    
+    def __repr__(self):
+        return f'<AssignmentSubmission Student:{self.student_id} Assignment:{self.assignment_id}>'

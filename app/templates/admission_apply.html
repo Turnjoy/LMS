@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Apply For Admission - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 760px; margin: 20px auto;">
+    <h1>Admission Application</h1>
+    <p style="color: #666; margin: 8px 0 22px;">This is not a student portal signup. The school admin must approve the application first.</p>
+
+    <form method="POST" action="{{ url_for('auth.apply_admission') }}">
+        <div class="form-group">
+            <label for="applicant_name">Student Full Name</label>
+            <input id="applicant_name" name="applicant_name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="requested_class_id">Class Applying For</label>
+            <select id="requested_class_id" name="requested_class_id">
+                <option value="">Select class</option>
+                {% for class_obj in classes %}
+                <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="parent_name">Parent/Guardian Name</label>
+            <input id="parent_name" name="parent_name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="parent_email">Parent/Guardian Email</label>
+            <input id="parent_email" name="parent_email" type="email" required>
+        </div>
+
+        <div class="form-group">
+            <label for="parent_phone">Parent/Guardian Phone</label>
+            <input id="parent_phone" name="parent_phone" required>
+        </div>
+
+        <div class="form-group">
+            <label for="previous_school">Previous School</label>
+            <input id="previous_school" name="previous_school">
+        </div>
+
+        <div class="form-group">
+            <label for="notes">Extra Notes</label>
+            <textarea id="notes" name="notes" placeholder="Tell us anything the admission office should know."></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Submit Application</button>
+        <a href="{{ url_for('auth.index') }}" class="btn btn-secondary">Back Home</a>
+    </form>
+</div>
+{% endblock %}

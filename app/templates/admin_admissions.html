@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Admissions - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Admission Applications</h1>
+    <p style="color: #666; margin-top: 8px;">Accepting an application creates the student portal account. Rejecting it does not.</p>
+</div>
+
+{% for application in applications %}
+<div class="card">
+    <h2>{{ application.applicant_name }}</h2>
+    <p><strong>Status:</strong> {{ application.status }}</p>
+    <p><strong>Class:</strong> {{ application.requested_class.name if application.requested_class else 'Not selected' }}</p>
+    <p><strong>Parent:</strong> {{ application.parent_name }} | {{ application.parent_email }} | {{ application.parent_phone }}</p>
+    {% if application.previous_school %}<p><strong>Previous School:</strong> {{ application.previous_school }}</p>{% endif %}
+    {% if application.notes %}<p><strong>Notes:</strong> {{ application.notes }}</p>{% endif %}
+
+    {% if application.status == 'pending' %}
+    <form method="POST" action="{{ url_for('admin.review_admission', application_id=application.id, action='accept') }}" style="margin-top: 18px;">
+        <div class="form-group">
+            <label for="student_email_{{ application.id }}">Student Login Email</label>
+            <input id="student_email_{{ application.id }}" name="student_email" type="email" value="{{ application.parent_email }}">
+        </div>
+        <div class="form-group">
+            <label for="temporary_password_{{ application.id }}">Temporary Password</label>
+            <input id="temporary_password_{{ application.id }}" name="temporary_password" value="student123">
+        </div>
+        <div class="form-group">
+            <label for="class_id_{{ application.id }}">Approved Class</label>
+            <select id="class_id_{{ application.id }}" name="class_id">
+                {% for class_obj in classes %}
+                <option value="{{ class_obj.id }}" {% if application.requested_class_id == class_obj.id %}selected{% endif %}>{{ class_obj.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <input type="hidden" name="term_id" value="{{ active_term.id if active_term else '' }}">
+        <div class="form-group">
+            <label for="amount_due_{{ application.id }}">Term Fee Due</label>
+            <input id="amount_due_{{ application.id }}" name="amount_due" type="number" min="0" step="0.01" value="0">
+        </div>
+        <button type="submit" class="btn btn-primary">Accept And Create Student</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('admin.review_admission', application_id=application.id, action='reject') }}" style="margin-top: 12px;">
+        <div class="form-group">
+            <label for="admin_note_{{ application.id }}">Rejection Note</label>
+            <textarea id="admin_note_{{ application.id }}" name="admin_note"></textarea>
+        </div>
+        <button type="submit" class="btn btn-secondary">Reject Application</button>
+    </form>
+    {% endif %}
+</div>
+{% else %}
+<div class="card">
+    <p>No admission applications found.</p>
+</div>
+{% endfor %}
+{% endblock %}

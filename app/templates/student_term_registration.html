@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Student Registration - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Student Term Registration</h1>
+    <p style="color: #666; margin-top: 8px;">Returning students register every term. Choose your class and subjects for {{ active_term.name }} - {{ active_term.session }}.</p>
+</div>
+
+<form method="POST" action="{{ url_for('auth.student_term_registration') }}" class="card">
+    <div class="form-group">
+        <label for="class_id">Class</label>
+        <select id="class_id" name="class_id" required>
+            <option value="">Select class</option>
+            {% for class_obj in classes %}
+            <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <h2>Subjects</h2>
+    <p style="color: #666; margin-bottom: 14px;">If your school marked a subject as required, it will be included automatically.</p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+        {% for subject in subjects %}
+        <label class="subject-option" data-subject-id="{{ subject.id }}" style="display: block; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+            <input
+                type="checkbox"
+                name="subject_ids"
+                value="{{ subject.id }}"
+                {% if subject.id in existing_subject_ids %}checked{% endif %}
+            >
+            {{ subject.name }}
+        </label>
+        {% endfor %}
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="margin-top: 18px;">Submit Registration</button>
+    <a href="{{ url_for('auth.portal_locked') }}" class="btn btn-secondary" style="margin-top: 18px;">Payment Status</a>
+</form>
+
+<script>
+const subjectMap = {{ subject_map_json | tojson }};
+const classSelect = document.getElementById('class_id');
+const options = Array.from(document.querySelectorAll('.subject-option'));
+
+function filterSubjects() {
+    const selectedClass = classSelect.value;
+    const allowedSubjects = subjectMap[selectedClass] || [];
+    const hasClassSetup = allowedSubjects.length > 0;
+
+    options.forEach((option) => {
+        const subjectId = Number(option.dataset.subjectId);
+        const visible = !hasClassSetup || allowedSubjects.includes(subjectId);
+        option.style.display = visible ? 'block' : 'none';
+        if (!visible) {
+            option.querySelector('input').checked = false;
+        }
+    });
+}
+
+classSelect.addEventListener('change', filterSubjects);
+filterSubjects();
+</script>
+{% endblock %}

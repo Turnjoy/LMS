@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Portal Locked - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 720px; margin: 40px auto;">
+    <h1>Portal Locked</h1>
+    <p style="color: #666; margin-top: 10px;">
+        Your student portal is locked{% if active_term %} for {{ active_term.name }} - {{ active_term.session }}{% endif %}.
+        Access will open after the school confirms full payment for this term.
+    </p>
+
+    {% if payment_settings and payment_settings.payment_instructions %}
+    <div class="card" style="margin-top: 22px; box-shadow: none; border: 1px solid var(--border-color);">
+        <h2>Payment Instructions</h2>
+        <p style="margin-top: 10px;">{{ payment_settings.payment_instructions }}</p>
+    </div>
+    {% endif %}
+
+    <a href="{{ url_for('auth.student_term_registration') }}" class="btn btn-primary">Student Registration</a>
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-secondary">Sign Out</a>
+</div>
+{% endblock %}

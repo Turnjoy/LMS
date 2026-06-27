@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Payments - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Student Payment Access</h1>
+    {% if active_term %}
+    <p style="color: #666; margin-top: 8px;">Active term: {{ active_term.name }} - {{ active_term.session }}. Mark a student paid to unlock their portal.</p>
+    {% else %}
+    <p style="color: #666; margin-top: 8px;">Create an active term before managing payment access.</p>
+    {% endif %}
+</div>
+
+{% if active_term %}
+{% for access in access_records %}
+<div class="card">
+    <h2>{{ access.student.name }}</h2>
+    <p><strong>Email:</strong> {{ access.student.email }}</p>
+    <p><strong>Status:</strong> {% if access.portal_unlocked %}Unlocked{% else %}Locked{% endif %}</p>
+    <p><strong>Amount Due:</strong> {{ access.amount_due }} | <strong>Amount Paid:</strong> {{ access.amount_paid }}</p>
+
+    {% if not access.portal_unlocked %}
+    <form method="POST" action="{{ url_for('admin.mark_payment_paid', access_id=access.id) }}" style="margin-top: 14px;">
+        <div class="form-group">
+            <label for="amount_paid_{{ access.id }}">Amount Paid</label>
+            <input id="amount_paid_{{ access.id }}" name="amount_paid" type="number" min="0" step="0.01" value="{{ access.amount_due }}">
+        </div>
+        <div class="form-group">
+            <label for="payment_reference_{{ access.id }}">Payment Reference</label>
+            <input id="payment_reference_{{ access.id }}" name="payment_reference">
+        </div>
+        <button type="submit" class="btn btn-primary">Confirm Payment And Unlock</button>
+    </form>
+    {% endif %}
+</div>
+{% else %}
+<div class="card">
+    <p>No student payment records found.</p>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

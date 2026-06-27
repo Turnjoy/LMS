@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    body {
+        background: #f4f7fb;
+    }
+
+    .auth-shell {
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) minmax(320px, 1fr);
+        gap: 24px;
+        align-items: stretch;
+        min-height: 72vh;
+        padding: 24px 0;
+    }
+
+    .auth-panel {
+        background: #ffffff;
+        border: 1px solid #e4e8ef;
+        border-radius: 8px;
+        box-shadow: 0 12px 32px rgba(21, 35, 54, 0.08);
+        padding: 28px;
+    }
+
+    .auth-panel h1,
+    .auth-panel h2 {
+        margin-bottom: 8px;
+        color: #202b3a;
+    }
+
+    .auth-panel p {
+        color: #647084;
+        margin-bottom: 22px;
+    }
+
+    .brand-panel {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 18px;
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        color: #ffffff;
+    }
+
+    .brand-panel p,
+    .brand-panel h1 {
+        color: #ffffff;
+    }
+
+    .auth-logo {
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid rgba(255, 255, 255, 0.8);
+        background: #ffffff;
+    }
+
+    .auth-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.15fr;
+        gap: 24px;
+    }
+
+    .auth-form {
+        display: grid;
+        gap: 14px;
+    }
+
+    .auth-form .form-group {
+        margin-bottom: 0;
+    }
+
+    .auth-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 8px;
+    }
+
+    .auth-note {
+        font-size: 0.92rem;
+        line-height: 1.45;
+    }
+
+    .parent-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    @media (max-width: 980px) {
+        .auth-shell,
+        .auth-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .auth-panel {
+            padding: 22px;
+        }
+
+        .parent-fields {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="auth-shell">
+    <section class="auth-panel brand-panel">
+        {% if tenant and tenant.logo_url %}
+        <img src="{{ tenant.logo_url }}" alt="School Logo" class="auth-logo">
+        {% endif %}
+        <div>
+            <h1>{% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}</h1>
+            <p>One portal for staff, parents, guardians, and students to manage school work, communication, admissions, payments, attendance, and results.</p>
+        </div>
+        <div class="auth-actions">
+            <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-secondary">Student Admission</a>
+        </div>
+    </section>
+
+    <div class="auth-grid">
+        <section class="auth-panel">
+            <h2>Sign In</h2>
+            <p>Access your school portal.</p>
+
+            <form method="POST" action="{{ url_for('auth.login') }}" class="auth-form">
+                <div class="form-group">
+                    <label for="login_email">Email Address</label>
+                    <input id="login_email" name="email" type="email" placeholder="you@example.com" required autocomplete="email">
+                </div>
+
+                <div class="form-group">
+                    <label for="login_password">Password</label>
+                    <input id="login_password" name="password" type="password" placeholder="Enter your password" required autocomplete="current-password">
+                </div>
+
+                <div class="auth-actions">
+                    <button type="submit" class="btn btn-primary">Sign In</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="auth-panel">
+            <h2>Create Account</h2>
+            <p>Staff and parents can create portal access here. Students should apply for admission first.</p>
+
+            <form method="POST" action="{{ url_for('auth.signup') }}" class="auth-form">
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input id="name" name="name" required autocomplete="name">
+                </div>
+
+                <div class="form-group">
+                    <label for="signup_email">Email Address</label>
+                    <input id="signup_email" name="email" type="email" required autocomplete="email">
+                </div>
+
+                <div class="form-group">
+                    <label for="signup_password">Password</label>
+                    <input id="signup_password" name="password" type="password" required autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                    <label for="role">Account Type</label>
+                    <select id="role" name="role" required>
+                        {% if not admin_exists %}
+                        <option value="admin">School Admin</option>
+                        {% endif %}
+                        <option value="teacher">Teacher</option>
+                        <option value="attendant">Attendance Officer</option>
+                        <option value="parent">Parent / Guardian</option>
+                    </select>
+                </div>
+
+                <div class="parent-fields">
+                    <div class="form-group">
+                        <label for="phone">Phone</label>
+                        <input id="phone" name="phone" type="tel" autocomplete="tel">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="address">Address</label>
+                        <input id="address" name="address" autocomplete="street-address">
+                    </div>
+                </div>
+
+                {% if admin_exists %}
+                <p class="auth-note">
+                    Admin signup is closed because this school already has an admin. The admin can create more staff accounts from the dashboard.
+                </p>
+                {% endif %}
+
+                <div class="auth-actions">
+                    <button type="submit" class="btn btn-primary">Sign Up</button>
+                    <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-secondary">Apply For Admission</a>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}

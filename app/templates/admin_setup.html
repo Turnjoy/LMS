@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}School Setup - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .setup-header {
+        margin-bottom: 24px;
+    }
+
+    .setup-header h1 {
+        font-size: 2rem;
+        margin-bottom: 6px;
+    }
+
+    .setup-header p {
+        color: #666;
+    }
+
+    .setup-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+        gap: 20px;
+        align-items: start;
+    }
+
+    .setup-section {
+        background: white;
+        border-radius: 8px;
+        padding: 22px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        margin-bottom: 20px;
+    }
+
+    .setup-section h2 {
+        font-size: 1.25rem;
+        margin-bottom: 16px;
+    }
+
+    .two-columns {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+    }
+
+    .checkbox-row {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin: 12px 0 4px;
+    }
+
+    .checkbox-row label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 500;
+    }
+
+    .checkbox-row input {
+        width: auto;
+    }
+
+    .item-list {
+        list-style: none;
+        margin-top: 8px;
+    }
+
+    .item-list li {
+        padding: 9px 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .item-list li:last-child {
+        border-bottom: 0;
+    }
+
+    .muted {
+        color: #666;
+        font-size: 0.92rem;
+    }
+
+    textarea {
+        min-height: 110px;
+        resize: vertical;
+    }
+
+    @media (max-width: 860px) {
+        .setup-grid,
+        .two-columns {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="setup-header">
+    <h1>School Setup</h1>
+    <p>Configure this school independently: branding, classes, subjects, academic term, and AI assistant behavior.</p>
+</div>
+
+<form method="POST" action="{{ url_for('admin.setup_school') }}">
+    <div class="setup-grid">
+        <div>
+            <section class="setup-section">
+                <h2>School Profile</h2>
+                <div class="form-group">
+                    <label for="custom_domain">School Domain</label>
+                    <input id="custom_domain" name="custom_domain" value="{{ tenant.custom_domain or tenant_domain or '' }}" placeholder="schooldomain.com">
+                    <p class="muted">Link the school domain to this LMS. The domain separates each school automatically.</p>
+                </div>
+                <div class="form-group">
+                    <label for="logo_url">Logo URL</label>
+                    <input id="logo_url" name="logo_url" value="{{ tenant.logo_url or '' }}" placeholder="https://example.com/logo.png">
+                </div>
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label for="primary_color">Primary Color</label>
+                        <input id="primary_color" name="primary_color" type="color" value="{{ tenant.primary_color or '#3498db' }}">
+                    </div>
+                    <div class="form-group">
+                        <label for="secondary_color">Secondary Color</label>
+                        <input id="secondary_color" name="secondary_color" type="color" value="{{ tenant.secondary_color or '#2ecc71' }}">
+                    </div>
+                </div>
+            </section>
+
+            <section class="setup-section">
+                <h2>Homepage And Admission</h2>
+                <div class="form-group">
+                    <label for="headline">Homepage Headline</label>
+                    <input id="headline" name="headline" value="{{ public_profile.headline or '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="about">About The School</label>
+                    <textarea id="about" name="about">{{ public_profile.about or '' }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="admission_message">Admission Message</label>
+                    <textarea id="admission_message" name="admission_message">{{ public_profile.admission_message or '' }}</textarea>
+                </div>
+                <div class="checkbox-row">
+                    <label><input type="checkbox" name="admission_open" {% if public_profile.admission_open %}checked{% endif %}> Admission open</label>
+                </div>
+            </section>
+
+            <section class="setup-section">
+                <h2>Classes And Subjects</h2>
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label for="classes">Add Classes</label>
+                        <textarea id="classes" name="classes" placeholder="JSS 1&#10;JSS 2&#10;SS 1"></textarea>
+                        <p class="muted">Use one per line or separate with commas.</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="subjects">Add Subjects</label>
+                        <textarea id="subjects" name="subjects" placeholder="Mathematics&#10;English Language&#10;Basic Science"></textarea>
+                        <p class="muted">Duplicates for this school are skipped.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="setup-section">
+                <h2>Academic Term</h2>
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label for="term_name">Term Name</label>
+                        <input id="term_name" name="term_name" placeholder="First Term">
+                    </div>
+                    <div class="form-group">
+                        <label for="session">Session</label>
+                        <input id="session" name="session" placeholder="2026/2027">
+                    </div>
+                    <div class="form-group">
+                        <label for="start_date">Start Date</label>
+                        <input id="start_date" name="start_date" type="date">
+                    </div>
+                    <div class="form-group">
+                        <label for="end_date">End Date</label>
+                        <input id="end_date" name="end_date" type="date">
+                    </div>
+                </div>
+                <div class="checkbox-row">
+                    <label><input type="checkbox" name="is_active_term" checked> Active term</label>
+                </div>
+            </section>
+
+            <section class="setup-section">
+                <h2>School AI</h2>
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label for="ai_provider">AI Provider</label>
+                        <select id="ai_provider" name="ai_provider">
+                            <option value="openai" {% if ai_settings.provider == 'openai' %}selected{% endif %}>OpenAI</option>
+                            <option value="custom" {% if ai_settings.provider == 'custom' %}selected{% endif %}>Custom</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="ai_model">Model</label>
+                        <input id="ai_model" name="ai_model" value="{{ ai_settings.model_name or 'gpt-4o-mini' }}">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="assistant_name">Assistant Name</label>
+                    <input id="assistant_name" name="assistant_name" value="{{ ai_settings.assistant_name or 'School AI Assistant' }}">
+                </div>
+                <div class="form-group">
+                    <label for="system_prompt">AI Instructions</label>
+                    <textarea id="system_prompt" name="system_prompt" placeholder="Example: You are the AI assistant for this school. Help teachers create lesson notes and help students learn without giving exam answers.">{{ ai_settings.system_prompt or '' }}</textarea>
+                </div>
+                <div class="checkbox-row">
+                    <label><input type="checkbox" name="enabled_for_teachers" {% if ai_settings.enabled_for_teachers %}checked{% endif %}> Teachers</label>
+                    <label><input type="checkbox" name="enabled_for_students" {% if ai_settings.enabled_for_students %}checked{% endif %}> Students</label>
+                </div>
+            </section>
+
+            <section class="setup-section">
+                <h2>Payment Gateway</h2>
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label for="payment_provider">Provider</label>
+                        <select id="payment_provider" name="payment_provider">
+                            <option value="manual" {% if payment_settings.provider == 'manual' %}selected{% endif %}>Manual Confirmation</option>
+                            <option value="paystack" {% if payment_settings.provider == 'paystack' %}selected{% endif %}>Paystack</option>
+                            <option value="flutterwave" {% if payment_settings.provider == 'flutterwave' %}selected{% endif %}>Flutterwave</option>
+                            <option value="custom" {% if payment_settings.provider == 'custom' %}selected{% endif %}>Custom</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="payment_currency">Currency</label>
+                        <input id="payment_currency" name="payment_currency" value="{{ payment_settings.currency or 'NGN' }}">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="payment_public_key">Public Key</label>
+                    <input id="payment_public_key" name="payment_public_key" value="{{ payment_settings.public_key or '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="payment_secret_key">Secret Key</label>
+                    <input id="payment_secret_key" name="payment_secret_key" value="{{ payment_settings.secret_key or '' }}" type="password">
+                </div>
+                <div class="form-group">
+                    <label for="payment_instructions">Payment Instructions</label>
+                    <textarea id="payment_instructions" name="payment_instructions">{{ payment_settings.payment_instructions or '' }}</textarea>
+                </div>
+                <div class="checkbox-row">
+                    <label><input type="checkbox" name="require_payment_for_portal" {% if payment_settings.require_payment_for_portal %}checked{% endif %}> Lock portal until payment is confirmed</label>
+                </div>
+            </section>
+
+            <button type="submit" class="btn btn-primary">Save Setup</button>
+            <a href="{{ url_for('admin.setup_wizard') }}" class="btn btn-secondary">Guided Setup</a>
+            <a href="{{ url_for('admin.class_subjects') }}" class="btn btn-secondary">Class Subjects</a>
+            <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">Back To Dashboard</a>
+        </div>
+
+        <aside>
+            <section class="setup-section">
+                <h2>Current Classes</h2>
+                {% if classes %}
+                <ul class="item-list">
+                    {% for class_obj in classes %}
+                    <li>{{ class_obj.name }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="muted">No classes added yet.</p>
+                {% endif %}
+            </section>
+
+            <section class="setup-section">
+                <h2>Current Subjects</h2>
+                {% if subjects %}
+                <ul class="item-list">
+                    {% for subject in subjects %}
+                    <li>{{ subject.name }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="muted">No subjects added yet.</p>
+                {% endif %}
+            </section>
+
+            <section class="setup-section">
+                <h2>Terms</h2>
+                {% if terms %}
+                <ul class="item-list">
+                    {% for term in terms %}
+                    <li>{{ term.name }} - {{ term.session }}{% if term.is_active %} <strong>Active</strong>{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="muted">No terms added yet.</p>
+                {% endif %}
+            </section>
+        </aside>
+    </div>
+</form>
+{% endblock %}

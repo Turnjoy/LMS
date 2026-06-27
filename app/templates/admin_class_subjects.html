@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Class Subjects - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Class Subject Setup</h1>
+    <p style="color: #666; margin-top: 8px;">Click the subjects each class offers. Required subjects will always be included in student term registration.</p>
+</div>
+
+{% if not classes or not subjects %}
+<div class="card">
+    <p>Create classes and subjects first, then return here.</p>
+    <a href="{{ url_for('admin.setup_school') }}" class="btn btn-primary">Go To School Setup</a>
+</div>
+{% else %}
+<form method="POST" action="{{ url_for('admin.class_subjects') }}">
+    {% for class_obj in classes %}
+    <div class="card">
+        <h2>{{ class_obj.name }}</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 14px;">
+            {% for subject in subjects %}
+            <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+                <label>
+                    <input
+                        type="checkbox"
+                        name="class_{{ class_obj.id }}_subjects"
+                        value="{{ subject.id }}"
+                        {% if subject.id in selected_map.get(class_obj.id, set()) %}checked{% endif %}
+                    >
+                    {{ subject.name }}
+                </label>
+                <br>
+                <label style="font-size: 0.9rem; color: #666;">
+                    <input
+                        type="checkbox"
+                        name="class_{{ class_obj.id }}_required"
+                        value="{{ subject.id }}"
+                        {% if subject.id in required_map.get(class_obj.id, set()) %}checked{% endif %}
+                    >
+                    Required
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <button type="submit" class="btn btn-primary">Save Class Subjects</button>
+</form>
+{% endif %}
+{% endblock %}
