@@ -128,7 +128,6 @@ class StudentTermAccess(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('student_id', 'term_id', name='unique_student_term_access'),
-        db.Index('idx_student_term_access_tenant', 'tenant_id'),
     )
 
 
@@ -165,7 +164,6 @@ class ClassSubject(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('class_id', 'subject_id', name='unique_class_subject'),
-        db.Index('idx_class_subject_tenant', 'tenant_id'),
     )
 
 
@@ -189,7 +187,6 @@ class StudentTermRegistration(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('student_id', 'term_id', 'subject_id', name='unique_student_term_subject'),
-        db.Index('idx_student_registration_tenant', 'tenant_id'),
     )
 
 
@@ -301,7 +298,6 @@ class StudentClass(db.Model):
     # Unique constraint to prevent duplicate enrollments
     __table_args__ = (
         db.UniqueConstraint('student_id', 'class_id', 'term_id', name='unique_student_class_term'),
-        db.Index('idx_student_class_tenant', 'tenant_id'),
     )
     
     def __repr__(self):
@@ -323,7 +319,6 @@ class TeacherAssignment(db.Model):
     # Unique constraint to prevent duplicate assignments
     __table_args__ = (
         db.UniqueConstraint('teacher_id', 'class_id', 'subject_id', 'term_id', name='unique_teacher_assignment'),
-        db.Index('idx_teacher_assignment_tenant', 'tenant_id'),
     )
     
     def __repr__(self):
@@ -367,7 +362,6 @@ class StudentParent(db.Model):
     # Unique constraint to prevent duplicate relationships
     __table_args__ = (
         db.UniqueConstraint('student_id', 'parent_id', name='unique_student_parent'),
-        db.Index('idx_student_parent_tenant', 'tenant_id'),
     )
     
     def __repr__(self):
@@ -419,7 +413,6 @@ class Result(db.Model):
     # Unique constraint to prevent duplicate results
     __table_args__ = (
         db.UniqueConstraint('student_id', 'subject_id', 'class_id', 'term_id', name='unique_result_record'),
-        db.Index('idx_result_tenant', 'tenant_id'),
     )
     
     @hybrid_property
@@ -501,7 +494,6 @@ class AssignmentSubmission(db.Model):
     # Unique constraint to prevent duplicate submissions
     __table_args__ = (
         db.UniqueConstraint('assignment_id', 'student_id', name='unique_assignment_submission'),
-        db.Index('idx_submission_tenant', 'tenant_id'),
     )
     
     def __repr__(self):

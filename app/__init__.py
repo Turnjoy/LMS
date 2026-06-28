@@ -69,7 +69,7 @@ def create_app(config_name='default'):
         from the Tenant table and store its ID in g.current_tenant_id.
         """
         # Skip for static files and favicon
-        if request.path.startswith('/static') or request.path == '/favicon.ico':
+        if request.path.startswith('/static') or request.path in ['/favicon.ico', '/healthz']:
             return
         
         try:
@@ -125,6 +125,11 @@ def create_app(config_name='default'):
             primary_color='#3498db',
             secondary_color='#2ecc71'
         )
+
+    @app.route('/healthz')
+    def healthz():
+        """Render health check endpoint."""
+        return {'status': 'ok'}, 200
     
     # Error handlers
     @app.errorhandler(404)

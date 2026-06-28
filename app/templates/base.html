@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}School LMS{% endblock %}</title>
+    <title>{% block title %}Turnjoy School Portal{% endblock %}</title>
     
     <!-- Dynamic CSS variables from tenant configuration -->
     <style>
         :root {
-            --primary-color: {{ primary_color | default('#3498db') }};
-            --secondary-color: {{ secondary_color | default('#2ecc71') }};
+            --primary-color: {{ primary_color | default('#0066cc') }};
+            --secondary-color: {{ secondary_color | default('#7b2cff') }};
             --primary-dark: {{ primary_color | default('#3498db') }}dd;
             --secondary-dark: {{ secondary_color | default('#2ecc71') }}dd;
             --text-color: #333;
@@ -204,9 +204,11 @@
         <div class="container header-content">
             <div style="display: flex; align-items: center;">
                 {% if tenant.logo_url %}
-                <img src="{{ tenant.logo_url }}" alt="School Logo" class="school-logo">
+                    <img src="{{ tenant.logo_url }}" alt="School Logo" class="school-logo">
+                {% else %}
+                    <img src="{{ url_for('static', filename='images/turnjoy_logo.png') }}" alt="Turnjoy Logo" class="school-logo">
                 {% endif %}
-                <h1 class="school-name">{{ tenant_domain or 'School Portal' }}</h1>
+                <h1 class="school-name">{{ tenant_domain or 'Turnjoy School Portal' }}</h1>
             </div>
             <nav class="nav-links">
                 <a href="/">Home</a>
@@ -239,7 +241,7 @@
     
     <footer class="footer">
         <div class="container">
-            <p>&copy; {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %} - All Rights Reserved</p>
+            <p>&copy; {% if tenant_domain %}{{ tenant_domain }}{% else %}Turnjoy{% endif %} - All Rights Reserved</p>
         </div>
     </footer>
     
