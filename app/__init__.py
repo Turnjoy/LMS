@@ -141,9 +141,12 @@ def create_app(config_name='default'):
         db.session.rollback()
         return render_template('base.html'), 500
     
-    # Create database tables
-    with app.app_context():
-        db.create_all()
-        _ensure_runtime_schema()
+    # Create database tables in development or testing only.
+    # Avoid creating tables automatically in production during app import/startup
+    # (platforms like Render should run migrations instead).
+    if app.config.get('DEBUG') or app.config.get('TESTING'):
+        with app.app_context():
+            db.create_all()
+            _ensure_runtime_schema()
     
     return app
