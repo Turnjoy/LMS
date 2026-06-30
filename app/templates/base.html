@@ -206,7 +206,7 @@
                 {% if tenant.logo_url %}
                     <img src="{{ tenant.logo_url }}" alt="School Logo" class="school-logo">
                 {% else %}
-                    <img src="{{ url_for('static', filename='images/turnjoy_logo.png') }}" alt="Turnjoy Logo" class="school-logo">
+                    <img src="{{ url_for('static', filename='images/turnjoy.png') }}" alt="Turnjoy Logo" class="school-logo">
                 {% endif %}
                 <h1 class="school-name">{{ tenant_domain or 'Turnjoy School Portal' }}</h1>
             </div>
