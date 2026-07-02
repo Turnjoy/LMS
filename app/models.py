@@ -498,3 +498,114 @@ class AssignmentSubmission(db.Model):
     
     def __repr__(self):
         return f'<AssignmentSubmission Student:{self.student_id} Assignment:{self.assignment_id}>'
+
+
+class GlobalSubjectRepository(db.Model):
+    """Read-only national curriculum subject list shared by every tenant."""
+    __tablename__ = 'global_subject_repository'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    category = db.Column(db.String(40), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant_subjects = db.relationship('TenantSubject', backref='global_subject', lazy='dynamic')
+
+    def __repr__(self):
+        return f'<GlobalSubjectRepository {self.name}>'
+
+
+class TenantSubject(db.Model):
+    """A national subject enabled for a tenant and assigned to a class level."""
+    __tablename__ = 'tenant_subjects'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    global_subject_id = db.Column(db.Integer, db.ForeignKey('global_subject_repository.id'), nullable=False)
+    class_level_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    assigned_teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='tenant_subjects')
+    class_level = db.relationship('Class')
+    assigned_teacher = db.relationship('User', foreign_keys=[assigned_teacher_id])
+    student_registrations = db.relationship(
+        'StudentSubjectRegistration',
+        backref='tenant_subject',
+        lazy='dynamic',
+        cascade='all, delete-orphan'
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'tenant_id',
+            'global_subject_id',
+            'class_level_id',
+            name='unique_tenant_global_subject_class'
+        ),
+    )
+
+    def __repr__(self):
+        return f'<TenantSubject Tenant:{self.tenant_id} Subject:{self.global_subject_id} Class:{self.class_level_id}>'
+
+
+class StudentSubjectRegistration(db.Model):
+    """Subjects selected by a student from the tenant national-subject catalog."""
+    __tablename__ = 'student_subject_registrations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    tenant_subject_id = db.Column(db.Integer, db.ForeignKey('tenant_subjects.id'), nullable=False)
+    registration_date = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    tenant = db.relationship('Tenant', backref='student_subject_registrations')
+    student = db.relationship('User', foreign_keys=[student_id])
+
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'tenant_subject_id', name='unique_student_tenant_subject'),
+    )
+
+    def __repr__(self):
+        return f'<StudentSubjectRegistration Student:{self.student_id} TenantSubject:{self.tenant_subject_id}>'
+
+
+class CBTExam(db.Model):
+    """Computer-based test exam container for generated or manual questions."""
+    __tablename__ = 'cbt_exams'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    subject_id = db.Column(db.Integer, db.ForeignKey('subjects.id'))
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='cbt_exams')
+    questions = db.relationship('CBTQuestion', backref='exam', lazy='dynamic', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<CBTExam {self.title}>'
+
+
+class CBTQuestion(db.Model):
+    """Multiple-choice CBT question."""
+    __tablename__ = 'cbt_questions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    exam_id = db.Column(db.Integer, db.ForeignKey('cbt_exams.id'), nullable=False, index=True)
+    question_text = db.Column(db.Text, nullable=False)
+    option_a = db.Column(db.String(500), nullable=False)
+    option_b = db.Column(db.String(500), nullable=False)
+    option_c = db.Column(db.String(500), nullable=False)
+    option_d = db.Column(db.String(500), nullable=False)
+    correct_option = db.Column(db.String(1), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='cbt_questions')
+
+    def __repr__(self):
+        return f'<CBTQuestion Exam:{self.exam_id} Question:{self.id}>'

@@ -28,6 +28,8 @@ def _database_url(env_var, default):
 class Config:
     """Base configuration class."""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+    GEMINI_MODEL = os.environ.get('GEMINI_MODEL') or 'gemini-1.5-flash'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,

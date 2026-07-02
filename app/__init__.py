@@ -55,11 +55,23 @@ def create_app(config_name='default'):
     from app.routes.admin import admin_bp
     from app.routes.results import results_bp
     from app.routes.attendance import attendance_bp
+    from app.routes.api_subjects import api_subjects_bp
+    from app.routes.cbt import cbt_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(results_bp)
     app.register_blueprint(attendance_bp)
+    app.register_blueprint(api_subjects_bp)
+    app.register_blueprint(cbt_bp)
+
+    @app.cli.command('seed-global-subjects')
+    def seed_global_subjects_command():
+        """Seed the Nigerian national subject repository."""
+        from app.seed import seed_global_subject_repository
+
+        created_count = seed_global_subject_repository()
+        print(f'Seeded global subject repository. Created {created_count} new subjects.')
     
     # Global before_request middleware for multi-tenant isolation
     @app.before_request
