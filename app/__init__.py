@@ -116,7 +116,7 @@ def create_app(config_name='default'):
                 if not tenant and host.endswith('.localhost'):
                     tenant = Tenant.query.filter_by(subdomain=host.split('.')[0]).first()
 
-                if not tenant and '.' in host:
+                if not tenant and '.' in host and not host.endswith('.onrender.com'):
                     tenant = Tenant.query.filter_by(subdomain=host.split('.')[0]).first()
 
             env_domain = os.environ.get('TENANT_DOMAIN')
