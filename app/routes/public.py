@@ -1,9 +1,12 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, g
-from flask_login import current_user, login_user
+from flask import Blueprint, current_app, render_template, request, redirect, url_for, flash, abort, g
+from flask_login import current_user, login_required, login_user
 from werkzeug.security import check_password_hash
 from app.models import Tenant, User
+from app import db
 
 public_bp = Blueprint('public', __name__)
+
+LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
 
 
 def _tenant_landing_context():
@@ -11,6 +14,13 @@ def _tenant_landing_context():
         return {}
     profile = Tenant.query.filter_by(id=g.current_tenant_id).first()
     return {'tenant': g.current_tenant, 'tenant_domain': g.current_domain, 'profile': getattr(g, 'current_tenant', None)}
+
+
+def _is_master_owner(user):
+    if not user.is_authenticated or user.role != 'super_admin':
+        return False
+    owner_email = current_app.config.get('MASTER_OWNER_EMAIL')
+    return not owner_email or user.email.lower() == owner_email.lower()
 
 
 @public_bp.route('/')
@@ -64,24 +74,84 @@ def master_dashboard():
             return render_template('public/master_login.html')
 
         user = User.query.filter_by(email=email.strip().lower(), role='super_admin').first()
-        if user and check_password_hash(user.password_hash, password):
+        if user and check_password_hash(user.password_hash, password) and _is_master_owner(user):
             login_user(user)
             return redirect(url_for('public.master_dashboard'))
 
         flash('Invalid credentials.', 'error')
         return render_template('public/master_login.html')
 
-    if current_user.is_authenticated and current_user.role == 'super_admin':
+    if current_user.is_authenticated and _is_master_owner(current_user):
         tenants = Tenant.query.order_by(Tenant.created_at.desc()).all()
         tenant_data = []
+        total_students = User.query.filter_by(role='student').count()
+        pending_admins = User.query.filter(
+            User.role.in_(['admin', 'primary_admin', 'secondary_admin']),
+            User.is_approved.is_(False)
+        ).order_by(User.created_at.asc()).all()
         for tenant in tenants:
             students = User.query.filter_by(tenant_id=tenant.id, role='student').order_by(User.name).all()
+            admins = User.query.filter(
+                User.tenant_id == tenant.id,
+                User.role.in_(['admin', 'primary_admin', 'secondary_admin'])
+            ).count()
+            teachers = User.query.filter_by(tenant_id=tenant.id, role='teacher').count()
             tenant_data.append({
                 'tenant': tenant,
                 'school_code': tenant.structured_code,
                 'student_count': len(students),
+                'admin_count': admins,
+                'teacher_count': teachers,
                 'students': students,
             })
-        return render_template('public/master_dashboard.html', tenant_data=tenant_data)
+        return render_template(
+            'public/master_dashboard.html',
+            tenant_data=tenant_data,
+            total_students=total_students,
+            pending_admins=pending_admins
+        )
 
     return render_template('public/master_login.html')
+
+
+@public_bp.route('/_master_hq_2026/admins/<int:user_id>/accept', methods=['POST'])
+@login_required
+def accept_school_admin(user_id):
+    if not _is_master_owner(current_user):
+        abort(403)
+
+    user = User.query.filter(
+        User.id == user_id,
+        User.role.in_(LOCAL_ADMIN_ROLES)
+    ).first_or_404()
+    user.is_approved = True
+    db.session.commit()
+    flash(f'{user.name} has been approved as a local school admin.', 'success')
+    return redirect(url_for('public.master_dashboard'))
+
+
+@public_bp.route('/_master_hq_2026/tenant/<int:tenant_id>')
+@login_required
+def master_tenant_detail(tenant_id):
+    if not _is_master_owner(current_user):
+        abort(403)
+
+    tenant = Tenant.query.filter_by(id=tenant_id).first_or_404()
+    admin_count = User.query.filter(
+        User.tenant_id == tenant.id,
+        User.role.in_(LOCAL_ADMIN_ROLES)
+    ).count()
+    teacher_count = User.query.filter_by(tenant_id=tenant.id, role='teacher').count()
+    student_count = User.query.filter_by(tenant_id=tenant.id, role='student').count()
+    section_config = (tenant.sections or 'both').title()
+    sss_tracks = [track.strip() for track in (tenant.sss_tracks or 'Science,Humanities,Commercial').split(',') if track.strip()]
+
+    return render_template(
+        'public/master_tenant_detail.html',
+        tenant=tenant,
+        admin_count=admin_count,
+        teacher_count=teacher_count,
+        student_count=student_count,
+        section_config=section_config,
+        sss_tracks=sss_tracks,
+    )

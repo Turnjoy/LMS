@@ -109,7 +109,7 @@ def _serialize_question(question):
 
 @cbt_bp.route('/generate-ai-questions', methods=['POST'])
 @login_required
-@role_required('admin', 'teacher')
+@role_required('local_admin', 'teacher')
 def generate_ai_questions():
     data = request.get_json(silent=True) or {}
     exam_id = data.get('exam_id')

@@ -101,7 +101,7 @@ def submit_attendance():
 
 @attendance_bp.route('/class/<int:class_id>')
 @login_required
-@role_required('attendant', 'teacher', 'admin')
+@role_required('attendant', 'teacher', 'local_admin')
 def get_class_attendance(class_id):
     """Get attendance records for a specific class."""
     start_date = request.args.get('start_date')
@@ -144,7 +144,7 @@ def get_class_attendance(class_id):
 
 @attendance_bp.route('/student/<int:student_id>')
 @login_required
-@role_required('attendant', 'teacher', 'admin', 'student')
+@role_required('attendant', 'teacher', 'local_admin', 'student')
 def get_student_attendance(student_id):
     """Get attendance records for a specific student."""
     # If student, only allow viewing own attendance

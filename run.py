@@ -29,7 +29,8 @@ def init_db():
         name='Admin User',
         email='admin@demo.com',
         password_hash=generate_password_hash('admin123'),
-        role='admin'
+        role='admin',
+        is_approved=True
     )
     
     teacher = User(
@@ -37,7 +38,8 @@ def init_db():
         name='John Teacher',
         email='teacher@demo.com',
         password_hash=generate_password_hash('teacher123'),
-        role='teacher'
+        role='teacher',
+        is_approved=True
     )
     
     student = User(
@@ -45,7 +47,8 @@ def init_db():
         name='Jane Student',
         email='student@demo.com',
         password_hash=generate_password_hash('student123'),
-        role='student'
+        role='student',
+        is_approved=True
     )
     
     attendant = User(
@@ -53,14 +56,15 @@ def init_db():
         name='Bob Attendant',
         email='attendant@demo.com',
         password_hash=generate_password_hash('attendant123'),
-        role='attendant'
+        role='attendant',
+        is_approved=True
     )
     
     db.session.add_all([admin, teacher, student, attendant])
     
     # Create sample classes
-    class1 = Class(tenant_id=tenant.id, name='JSS 1')
-    class2 = Class(tenant_id=tenant.id, name='JSS 2')
+    class1 = Class(tenant_id=tenant.id, name='JSS 1A', section='secondary', arm='A')
+    class2 = Class(tenant_id=tenant.id, name='JSS 2A', section='secondary', arm='A')
     db.session.add_all([class1, class2])
     
     # Create sample subjects

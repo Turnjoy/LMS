@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Onboarding - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Bulk User Onboarding</h1>
+    <p style="color: #666; margin-top: 8px;">Upload CSV or Excel files with name and email columns. Password, class_id, and term_id are optional.</p>
+</div>
+
+<form method="POST" action="{{ url_for('admin.bulk_onboarding') }}" enctype="multipart/form-data" class="card">
+    <div class="form-group">
+        <label for="account_type">Account Type</label>
+        <select id="account_type" name="account_type" required>
+            <option value="student">Students</option>
+            <option value="teacher">Teachers</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="default_class_id">Default Student Class</label>
+        <select id="default_class_id" name="default_class_id">
+            <option value="">Use class_id column or leave unassigned</option>
+            {% for class_obj in classes %}
+            <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="default_term_id">Default Term</label>
+        <select id="default_term_id" name="default_term_id">
+            <option value="">Use term_id column or leave unassigned</option>
+            {% for term in terms %}
+            <option value="{{ term.id }}">{{ term.name }} - {{ term.session }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="spreadsheet">Spreadsheet</label>
+        <input id="spreadsheet" name="spreadsheet" type="file" accept=".csv,.xlsx,.xls" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Upload And Create Accounts</button>
+</form>
+
+{% if skipped %}
+<div class="card">
+    <h2>Skipped Rows</h2>
+    {% for item in skipped %}
+    <p>{{ item }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

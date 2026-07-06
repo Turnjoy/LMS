@@ -203,7 +203,7 @@
     <header class="header">
         <div class="container header-content">
             <div style="display: flex; align-items: center;">
-                {% if tenant.logo_url %}
+                    {% if tenant and tenant.logo_url %}
                     <img src="{{ tenant.logo_url }}" alt="School Logo" class="school-logo">
                 {% else %}
                     <img src="{{ url_for('static', filename='images/turnjoy.png') }}" alt="Turnjoy Logo" class="school-logo">
@@ -245,6 +245,9 @@
         </div>
     </footer>
     
+    {% if current_user.is_authenticated and current_user.role == 'student' %}
+    <script src="{{ url_for('static', filename='js/offline_sync.js') }}"></script>
+    {% endif %}
     {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -20,11 +20,29 @@ def _ensure_runtime_schema():
         return
 
     with engine.connect() as connection:
-        columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(tenants)").fetchall()]
-        if 'custom_domain' not in columns:
+        tenant_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(tenants)").fetchall()]
+        if 'custom_domain' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN custom_domain VARCHAR(255)")
             connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_tenants_custom_domain ON tenants (custom_domain)")
-            connection.commit()
+
+        user_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
+        if 'is_approved' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_approved BOOLEAN NOT NULL DEFAULT 0")
+
+        class_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(classes)").fetchall()]
+        if 'section' not in class_columns:
+            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN section VARCHAR(20)")
+        if 'arm' not in class_columns:
+            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN arm VARCHAR(1)")
+        if 'track' not in class_columns:
+            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN track VARCHAR(30)")
+
+        submission_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(assignment_submissions)").fetchall()]
+        if submission_columns and 'client_sync_id' not in submission_columns:
+            connection.exec_driver_sql("ALTER TABLE assignment_submissions ADD COLUMN client_sync_id VARCHAR(120)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_assignment_submissions_client_sync_id ON assignment_submissions (client_sync_id)")
+
+        connection.commit()
 
 
 def create_app(config_name='default'):
@@ -58,6 +76,7 @@ def create_app(config_name='default'):
     from app.routes.attendance import attendance_bp
     from app.routes.api_subjects import api_subjects_bp
     from app.routes.cbt import cbt_bp
+    from app.routes.sync import sync_bp
     
     app.register_blueprint(public_bp)
     app.register_blueprint(portal_auth_bp)
@@ -66,6 +85,7 @@ def create_app(config_name='default'):
     app.register_blueprint(attendance_bp)
     app.register_blueprint(api_subjects_bp)
     app.register_blueprint(cbt_bp)
+    app.register_blueprint(sync_bp)
 
     @app.cli.command('seed-global-subjects')
     def seed_global_subjects_command():

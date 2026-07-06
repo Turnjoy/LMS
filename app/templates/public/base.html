@@ -10,6 +10,8 @@
         header, footer { background: #0c3250; color: white; }
         header { padding: 20px 0; }
         .brand { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+        .brand-title { display: flex; align-items: center; gap: 12px; }
+        .brand-logo { width: 48px; height: 48px; object-fit: contain; border-radius: 6px; background: white; }
         .brand h1 { margin: 0; font-size: 1.8rem; }
         .nav { display: flex; gap: 18px; flex-wrap: wrap; }
         .nav a { color: white; text-decoration: none; font-weight: 600; }
@@ -28,9 +30,12 @@
 <body>
 <header>
     <div class="container brand">
-        <div>
+        <div class="brand-title">
+            <img src="{{ tenant.logo_url if tenant and tenant.logo_url else url_for('static', filename='images/turnjoy.png') }}" alt="Turnjoy Logo" class="brand-logo">
+            <div>
             <h1>Turnjoy LMS</h1>
             <p style="opacity: .85;">Global school management for marketing and tenant domains.</p>
+            </div>
         </div>
         <nav class="nav">
             <a href="{{ url_for('public.index') }}">Home</a>

@@ -78,7 +78,7 @@
         margin-left: 10px;
     }
     
-    .role-admin { background: #e74c3c; color: white; }
+    .role-admin, .role-primary_admin, .role-secondary_admin { background: #e74c3c; color: white; }
     .role-teacher { background: #3498db; color: white; }
     .role-student { background: #2ecc71; color: white; }
     .role-attendant { background: #f39c12; color: white; }
@@ -120,9 +120,9 @@
     <p>{% if tenant_domain %}{{ tenant_domain }}{% endif %} Learning Management System</p>
 </div>
 
-{% if current_user.role == 'admin' %}
+{% if current_user.role in ['admin', 'primary_admin', 'secondary_admin'] %}
 <div class="quick-actions">
-    <h2>Admin Quick Actions</h2>
+    <h2>{% if admin_section %}{{ admin_section|title }} {% endif %}Admin Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('admin.setup_school') }}" class="btn btn-secondary">School Setup</a>
         <a href="{{ url_for('admin.setup_wizard') }}" class="btn btn-primary">Guided Setup</a>
@@ -130,6 +130,7 @@
         <a href="{{ url_for('admin.teacher_assignments') }}" class="btn btn-primary">Teacher Assignments</a>
         <a href="{{ url_for('admin.admissions') }}" class="btn btn-primary">Admissions</a>
         <a href="{{ url_for('admin.payments') }}" class="btn btn-secondary">Payments</a>
+        <a href="{{ url_for('admin.bulk_onboarding') }}" class="btn btn-primary">Bulk Onboarding</a>
     </div>
 </div>
 

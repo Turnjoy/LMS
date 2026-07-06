@@ -1,0 +1,37 @@
+{% extends 'public/base.html' %}
+
+{% block title %}Tenant Details - {{ tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>{{ tenant.name }}</h1>
+    <p>{{ tenant.custom_domain or tenant.subdomain }}</p>
+</div>
+
+<div class="section">
+    <div class="card">
+        <h2>Tenant Summary</h2>
+        <p><strong>Tenant Code:</strong> {{ tenant.structured_code }}</p>
+        <p><strong>Section Configuration:</strong> {{ section_config }}</p>
+        <p><strong>SSS Tracks:</strong> {{ sss_tracks | join(', ') }}</p>
+        <p><strong>Admins:</strong> {{ admin_count }}</p>
+        <p><strong>Teachers:</strong> {{ teacher_count }}</p>
+        <p><strong>Students:</strong> {{ student_count }}</p>
+    </div>
+</div>
+
+<div class="section">
+    <div class="card">
+        <h2>Schools Stats</h2>
+        <div class="grid">
+            <div class="card"><strong>Admins</strong><p>{{ admin_count }}</p></div>
+            <div class="card"><strong>Teachers</strong><p>{{ teacher_count }}</p></div>
+            <div class="card"><strong>Students</strong><p>{{ student_count }}</p></div>
+            <div class="card"><strong>Sections</strong><p>{{ section_config }}</p></div>
+            <div class="card"><strong>SSS Tracks</strong><p>{{ sss_tracks | join(', ') }}</p></div>
+        </div>
+    </div>
+</div>
+
+<a href="{{ url_for('public.master_dashboard') }}" class="btn btn-secondary">Back to Master Dashboard</a>
+{% endblock %}

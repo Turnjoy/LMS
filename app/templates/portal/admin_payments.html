@@ -12,6 +12,72 @@
     {% endif %}
 </div>
 
+<div class="card">
+    <h2>Fee Categories</h2>
+    <form method="POST" action="{{ url_for('admin.payments') }}">
+        <input type="hidden" name="action" value="category">
+        <div class="form-group">
+            <label for="fee_name">Category Name</label>
+            <input id="fee_name" name="name" placeholder="Tuition, PTA Levy, Books">
+        </div>
+        <div class="form-group">
+            <label for="fee_description">Description</label>
+            <textarea id="fee_description" name="description"></textarea>
+        </div>
+        <label><input type="checkbox" name="is_active" checked> Active</label><br><br>
+        <button type="submit" class="btn btn-primary">Save Category</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Installment Fee Plan</h2>
+    <form method="POST" action="{{ url_for('admin.payments') }}">
+        <input type="hidden" name="action" value="plan">
+        <div class="form-group">
+            <label for="fee_category_id">Fee Category</label>
+            <select id="fee_category_id" name="fee_category_id" required>
+                {% for category in categories %}
+                <option value="{{ category.id }}">{{ category.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="class_id">Class/Tier</label>
+            <select id="class_id" name="class_id">
+                <option value="">All Classes</option>
+                {% for class_obj in classes %}
+                <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="amount">Amount</label>
+            <input id="amount" name="amount" type="number" min="0" step="0.01">
+        </div>
+        <label><input type="checkbox" name="installments_enabled"> Enable installments</label>
+        <div style="display: grid; gap: 10px; margin-top: 14px;">
+            {% for index in range(1, 4) %}
+            <div style="display: grid; grid-template-columns: 1fr 120px 170px; gap: 10px;">
+                <input name="milestone_label" placeholder="Milestone {{ index }}">
+                <input name="milestone_percentage" type="number" min="0" max="100" step="0.01" placeholder="%">
+                <input name="milestone_due_date" type="date">
+            </div>
+            {% endfor %}
+        </div>
+        <br>
+        <button type="submit" class="btn btn-primary">Save Fee Plan</button>
+    </form>
+</div>
+
+{% if plans %}
+<div class="card">
+    <h2>Configured Fee Plans</h2>
+    {% for plan in plans %}
+    <p><strong>{{ plan.fee_category.name }}</strong> - {{ plan.class_obj.name if plan.class_obj else 'All Classes' }} - {{ plan.amount }} {% if plan.installments_enabled %}(installments){% endif %}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% if active_term %}
 {% for access in access_records %}
 <div class="card">
@@ -39,5 +105,14 @@
     <p>No student payment records found.</p>
 </div>
 {% endfor %}
+{% endif %}
+
+{% if transactions %}
+<div class="card">
+    <h2>Recent Payment Webhooks</h2>
+    {% for transaction in transactions %}
+    <p><strong>{{ transaction.provider }}</strong> {{ transaction.reference }} - {{ transaction.amount }} - {{ transaction.status }}</p>
+    {% endfor %}
+</div>
 {% endif %}
 {% endblock %}

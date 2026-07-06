@@ -23,7 +23,7 @@ def _tenant_id():
 
 @api_subjects_bp.route('/admin/global-subjects', methods=['GET'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def get_global_subjects():
     subjects = GlobalSubjectRepository.query.order_by(
         GlobalSubjectRepository.category,
@@ -45,7 +45,7 @@ def get_global_subjects():
 
 @api_subjects_bp.route('/admin/assign-subject', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def assign_subject():
     data = request.get_json(silent=True) or {}
     global_subject_id = data.get('global_subject_id')

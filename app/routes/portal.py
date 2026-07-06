@@ -18,6 +18,7 @@ from app.models import (
 from app import db
 
 auth_bp = Blueprint('auth', __name__)
+LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
 
 @auth_bp.before_request
 def require_tenant_context():
@@ -44,6 +45,10 @@ def login():
         
         # Validate credentials securely
         if user and check_password_hash(user.password_hash, password):
+            if user.role in LOCAL_ADMIN_ROLES and not user.is_approved:
+                flash('Your school admin account is pending Turnjoy owner approval.', 'error')
+                return render_template('portal/login.html', admin_exists=_admin_exists())
+
             login_user(user)
 
             if user.role == 'student' and _student_portal_is_locked(user):
@@ -51,11 +56,7 @@ def login():
                 return redirect(url_for('auth.portal_locked'))
             
             # Role-based redirect after successful login
-            if user.role == 'admin':
-                return redirect(url_for('admin.dashboard'))
-            elif user.role == 'primary_admin':
-                return redirect(url_for('admin.dashboard'))
-            elif user.role == 'secondary_admin':
+            if user.role in LOCAL_ADMIN_ROLES:
                 return redirect(url_for('admin.dashboard'))
             elif user.role == 'teacher':
                 return redirect(url_for('results.dashboard'))
@@ -114,9 +115,9 @@ def _admin_exists():
     if not hasattr(g, 'current_tenant_id') or g.current_tenant_id is None:
         return False
 
-    return User.query.filter_by(
-        tenant_id=g.current_tenant_id,
-        role='admin'
+    return User.query.filter(
+        User.tenant_id == g.current_tenant_id,
+        User.role.in_(LOCAL_ADMIN_ROLES)
     ).first() is not None
 
 
@@ -340,7 +341,9 @@ def signup():
         tenant_id=g.current_tenant_id,
         name=name,
         email=email,
-        role=role
+        role=role,
+        section='primary' if role == 'primary_admin' else ('secondary' if role == 'secondary_admin' else None),
+        is_approved=role not in LOCAL_ADMIN_ROLES
     )
     user.set_password(password)
     
@@ -357,5 +360,8 @@ def signup():
 
     db.session.commit()
     
-    flash('Account created successfully! Please sign in.', 'success')
+    if role in LOCAL_ADMIN_ROLES:
+        flash('School admin account created. It is pending Turnjoy owner approval before login.', 'success')
+    else:
+        flash('Account created successfully! Please sign in.', 'success')
     return redirect(url_for('auth.login'))

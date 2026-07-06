@@ -139,6 +139,82 @@ class StudentTermAccess(db.Model):
     )
 
 
+class FeeCategory(db.Model):
+    """School-owned fee categories, never configured by the platform owner."""
+    __tablename__ = 'fee_categories'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='fee_categories')
+    installment_plans = db.relationship('FeeInstallmentPlan', backref='fee_category', lazy='dynamic', cascade='all, delete-orphan')
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'name', name='unique_tenant_fee_category'),
+    )
+
+
+class FeeInstallmentPlan(db.Model):
+    """Class/tier fee plan controlled by local school admins."""
+    __tablename__ = 'fee_installment_plans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    fee_category_id = db.Column(db.Integer, db.ForeignKey('fee_categories.id'), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'))
+    amount = db.Column(db.Float, default=0.0)
+    installments_enabled = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='fee_installment_plans')
+    class_obj = db.relationship('Class')
+    term = db.relationship('Term')
+    milestones = db.relationship('FeeInstallmentMilestone', backref='plan', lazy='dynamic', cascade='all, delete-orphan')
+
+
+class FeeInstallmentMilestone(db.Model):
+    """Percentage and deadline milestone for installment billing."""
+    __tablename__ = 'fee_installment_milestones'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('fee_installment_plans.id'), nullable=False)
+    label = db.Column(db.String(80), nullable=False)
+    percentage = db.Column(db.Float, nullable=False)
+    due_date = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PaymentTransaction(db.Model):
+    """Webhook-backed payment ledger for live balances."""
+    __tablename__ = 'payment_transactions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    term_id = db.Column(db.Integer, db.ForeignKey('terms.id'))
+    provider = db.Column(db.String(40), nullable=False)
+    reference = db.Column(db.String(120), nullable=False, index=True)
+    amount = db.Column(db.Float, default=0.0)
+    status = db.Column(db.String(30), default='pending')
+    raw_payload = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='payment_transactions')
+    student = db.relationship('User', foreign_keys=[student_id])
+    term = db.relationship('Term')
+
+    __table_args__ = (
+        db.UniqueConstraint('provider', 'reference', name='unique_payment_provider_reference'),
+    )
+
+
 class SchoolSetupPreference(db.Model):
     """Stores guided setup choices for a tenant."""
     __tablename__ = 'school_setup_preferences'
@@ -203,12 +279,13 @@ class User(UserMixin, db.Model):
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
-    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True, index=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False)  # 'super_admin', 'admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent'
     section = db.Column(db.String(20), default=None)  # 'primary', 'secondary', or None for global roles
+    is_approved = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
@@ -242,6 +319,9 @@ class Class(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
     name = db.Column(db.String(50), nullable=False)
+    section = db.Column(db.String(20), index=True)
+    arm = db.Column(db.String(1), index=True)
+    track = db.Column(db.String(30), index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -494,6 +574,7 @@ class AssignmentSubmission(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     submission_text = db.Column(db.Text)
     quiz_answers = db.Column(db.JSON)  # Store answers for quiz submissions
+    client_sync_id = db.Column(db.String(120), index=True)
     score = db.Column(db.Float)
     submitted_at = db.Column(db.DateTime, default=datetime.utcnow)
     graded_at = db.Column(db.DateTime)
@@ -503,6 +584,7 @@ class AssignmentSubmission(db.Model):
     # Unique constraint to prevent duplicate submissions
     __table_args__ = (
         db.UniqueConstraint('assignment_id', 'student_id', name='unique_assignment_submission'),
+        db.UniqueConstraint('tenant_id', 'client_sync_id', name='unique_assignment_client_sync_id'),
     )
     
     def __repr__(self):

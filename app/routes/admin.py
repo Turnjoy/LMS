@@ -3,8 +3,14 @@ from flask_login import login_required, current_user
 from app.models import (
     AdmissionApplication,
     ClassSubject,
+    FeeCategory,
+    FeeInstallmentMilestone,
+    FeeInstallmentPlan,
     PaymentGatewaySetting,
+    PaymentTransaction,
     SchoolSetupPreference,
+    Assignment,
+    AssignmentSubmission,
     StudentTermAccess,
     StudentTermRegistration,
     TenantPublicProfile,
@@ -25,6 +31,16 @@ from sqlalchemy import or_
 from datetime import datetime
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
+
+
+@admin_bp.before_request
+def require_tenant_context():
+    if not getattr(g, 'current_tenant', None):
+        abort(404)
+    if current_user.is_authenticated and current_user.tenant_id != g.current_tenant_id:
+        abort(403)
 
 PRIMARY_JSS_CORE_SUBJECTS = [
     'Mathematics',
@@ -67,12 +83,52 @@ SSS_EXTRA_ELECTIVES = [
 
 
 def _parse_list(raw_value):
-    return [item.strip().upper() for item in (raw_value or '').replace(',', '\n').splitlines() if item.strip()]
+    items = []
+    for item in (raw_value or '').replace(',', '\n').splitlines():
+        value = item.strip().upper()
+        if len(value) == 1 and 'A' <= value <= 'Z' and value not in items:
+            items.append(value)
+    return items
+
+
+def _admin_section():
+    if current_user.role == 'primary_admin':
+        return 'primary'
+    if current_user.role == 'secondary_admin':
+        return 'secondary'
+    return current_user.section
+
+
+def _apply_section_scope(query, model=Class):
+    section = _admin_section()
+    if section:
+        return query.filter(model.section == section)
+    return query
+
+
+def _class_metadata(class_name):
+    normalized = (class_name or '').lower()
+    section = None
+    if normalized.startswith(('playgroup', 'kg', 'nursery', 'primary')):
+        section = 'primary'
+    elif normalized.startswith(('jss', 'sss')):
+        section = 'secondary'
+
+    arm = None
+    compact = (class_name or '').strip()
+    if compact and compact[-1:].isalpha() and compact[-1:].upper() in [chr(code) for code in range(65, 91)]:
+        arm = compact[-1:].upper()
+
+    track = _sss_track_for_class(class_name) if normalized.startswith('sss') else None
+    return section, arm, track
 
 
 def _generate_class_names(sections, arms, sss_tracks):
     generated = []
     arms = arms or ['A']
+
+    if 'playgroup' in sections:
+        generated.extend([f'Playgroup {arm}' for arm in arms])
 
     if 'kg' in sections:
         for level in range(1, 4):
@@ -136,7 +192,9 @@ def _get_or_create_class_subject(class_id, subject_id, is_required=True):
 
 def _class_section(class_name):
     normalized = (class_name or '').strip().lower()
-    if normalized.startswith(('primary', 'jss')):
+    if normalized.startswith(('playgroup', 'kg', 'nursery', 'primary')):
+        return 'primary'
+    if normalized.startswith('jss'):
         return 'primary_jss'
     if normalized.startswith('sss'):
         return 'sss'
@@ -197,17 +255,33 @@ def _apply_curriculum_matrix(classes, primary_jss_extras, sss_extra_electives):
 
 @admin_bp.route('/dashboard')
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def dashboard():
     """Admin dashboard for school management."""
+    section = _admin_section()
+    class_query = Class.query.filter_by(tenant_id=g.current_tenant_id)
+    if section:
+        class_query = class_query.filter_by(section=section)
+    scoped_classes = class_query.all()
+    scoped_class_ids = [class_obj.id for class_obj in scoped_classes]
+
+    user_count = User.query.filter_by(tenant_id=g.current_tenant_id).count()
+    if section:
+        user_count = User.query.join(StudentClass, StudentClass.student_id == User.id).filter(
+            User.tenant_id == g.current_tenant_id,
+            User.role == 'student',
+            StudentClass.tenant_id == g.current_tenant_id,
+            StudentClass.class_id.in_(scoped_class_ids or [0])
+        ).distinct().count()
+
     stats = {
-        'users': User.query.filter_by(tenant_id=g.current_tenant_id).count(),
-        'classes': Class.query.filter_by(tenant_id=g.current_tenant_id).count(),
+        'users': user_count,
+        'classes': len(scoped_classes),
         'subjects': Subject.query.filter_by(tenant_id=g.current_tenant_id).count(),
         'active_terms': Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).count(),
         'pending_admissions': AdmissionApplication.query.filter_by(tenant_id=g.current_tenant_id, status='pending').count(),
     }
-    return render_template('portal/dashboard.html', stats=stats)
+    return render_template('portal/dashboard.html', stats=stats, admin_section=section)
 
 
 def _split_setup_items(raw_value):
@@ -235,9 +309,28 @@ def _parse_date(value):
     return datetime.strptime(value, '%Y-%m-%d').date()
 
 
+def _parse_installment_milestones(labels, percentages, due_dates):
+    milestones = []
+    for index, label in enumerate(labels):
+        label = (label or '').strip()
+        if not label:
+            continue
+        try:
+            percentage = float(percentages[index] or 0)
+        except (IndexError, TypeError, ValueError):
+            percentage = 0
+        due_date = due_dates[index] if index < len(due_dates) else None
+        milestones.append({
+            'label': label,
+            'percentage': percentage,
+            'due_date': _parse_date(due_date),
+        })
+    return milestones
+
+
 @admin_bp.route('/setup', methods=['GET', 'POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def setup_school():
     """Configure tenant profile, classes, subjects, term, and AI settings."""
     tenant = Tenant.query.get(g.current_tenant_id)
@@ -291,7 +384,8 @@ def setup_school():
         for class_name in _split_setup_items(request.form.get('classes')):
             exists = Class.query.filter_by(tenant_id=tenant.id, name=class_name).first()
             if not exists:
-                db.session.add(Class(tenant_id=tenant.id, name=class_name))
+                section, arm, track = _class_metadata(class_name)
+                db.session.add(Class(tenant_id=tenant.id, name=class_name, section=section, arm=arm, track=track))
                 created_classes += 1
 
         created_subjects = 0
@@ -337,7 +431,7 @@ def setup_school():
         flash(f'School setup saved. Added {created_classes} classes and {created_subjects} subjects.', 'success')
         return redirect(url_for('admin.setup_school'))
 
-    classes = Class.query.filter_by(tenant_id=tenant.id).order_by(Class.name).all()
+    classes = _apply_section_scope(Class.query.filter_by(tenant_id=tenant.id)).order_by(Class.name).all()
     subjects = Subject.query.filter_by(tenant_id=tenant.id).order_by(Subject.name).all()
     terms = Term.query.filter_by(tenant_id=tenant.id).order_by(Term.created_at.desc()).all()
 
@@ -355,7 +449,7 @@ def setup_school():
 
 @admin_bp.route('/setup-wizard', methods=['GET', 'POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def setup_wizard():
     """Guided setup for class structure after domain linking."""
     preference = SchoolSetupPreference.query.filter_by(tenant_id=g.current_tenant_id).first()
@@ -378,13 +472,20 @@ def setup_wizard():
         preference.sections = sections
         preference.arms = arms
         preference.sss_tracks = sss_tracks
+        tenant = Tenant.query.get(g.current_tenant_id)
+        if tenant:
+            has_primary = any(item in sections for item in ['playgroup', 'kg', 'nursery', 'primary'])
+            has_secondary = any(item in sections for item in ['jss', 'sss'])
+            tenant.sections = 'both' if has_primary and has_secondary else ('primary' if has_primary else 'secondary')
+            tenant.sss_tracks = ','.join(sss_tracks)
 
         created_classes = 0
         generated_classes = []
         for class_name in _generate_class_names(sections, arms, sss_tracks):
             exists = Class.query.filter_by(tenant_id=g.current_tenant_id, name=class_name).first()
             if not exists:
-                exists = Class(tenant_id=g.current_tenant_id, name=class_name)
+                section, arm, track = _class_metadata(class_name)
+                exists = Class(tenant_id=g.current_tenant_id, name=class_name, section=section, arm=arm, track=track)
                 db.session.add(exists)
                 db.session.flush()
                 created_classes += 1
@@ -418,14 +519,17 @@ def setup_wizard():
 
 @admin_bp.route('/class-subjects', methods=['GET', 'POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def class_subjects():
     """Select subjects offered by each class."""
-    classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
+    classes = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id)).order_by(Class.name).all()
     subjects = Subject.query.filter_by(tenant_id=g.current_tenant_id).order_by(Subject.name).all()
 
     if request.method == 'POST':
-        ClassSubject.query.filter_by(tenant_id=g.current_tenant_id).delete()
+        ClassSubject.query.filter(
+            ClassSubject.tenant_id == g.current_tenant_id,
+            ClassSubject.class_id.in_([class_obj.id for class_obj in classes] or [0])
+        ).delete(synchronize_session=False)
 
         for class_obj in classes:
             selected_subjects = request.form.getlist(f'class_{class_obj.id}_subjects')
@@ -462,7 +566,7 @@ def class_subjects():
 
 @admin_bp.route('/teacher-assignments', methods=['GET', 'POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def teacher_assignments():
     """Assign teachers to configured subject + class arm combinations."""
     active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
@@ -470,8 +574,12 @@ def teacher_assignments():
         tenant_id=g.current_tenant_id,
         role='teacher'
     ).order_by(User.name).all()
-    classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
-    class_subjects = ClassSubject.query.filter_by(tenant_id=g.current_tenant_id).all()
+    classes = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id)).order_by(Class.name).all()
+    class_ids = [class_obj.id for class_obj in classes]
+    class_subjects = ClassSubject.query.filter(
+        ClassSubject.tenant_id == g.current_tenant_id,
+        ClassSubject.class_id.in_(class_ids or [0])
+    ).all()
     configured_subject_ids = {item.subject_id for item in class_subjects}
     subjects = Subject.query.filter(
         Subject.tenant_id == g.current_tenant_id,
@@ -536,7 +644,7 @@ def teacher_assignments():
     terms = Term.query.filter_by(tenant_id=g.current_tenant_id).order_by(Term.created_at.desc()).all()
     assignments = TeacherAssignment.query.filter_by(
         tenant_id=g.current_tenant_id
-    ).order_by(TeacherAssignment.created_at.desc()).all()
+    ).filter(TeacherAssignment.class_id.in_(class_ids or [0])).order_by(TeacherAssignment.created_at.desc()).all()
     class_subject_map = {}
     for item in class_subjects:
         class_subject_map.setdefault(item.class_id, []).append(item.subject_id)
@@ -555,7 +663,7 @@ def teacher_assignments():
 
 @admin_bp.route('/admissions')
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def admissions():
     """Review admission applications for this school."""
     status = request.args.get('status', 'pending')
@@ -564,7 +672,7 @@ def admissions():
         query = query.filter_by(status=status)
 
     applications = query.order_by(AdmissionApplication.created_at.desc()).all()
-    classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
+    classes = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id)).order_by(Class.name).all()
     active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
 
     return render_template(
@@ -578,7 +686,7 @@ def admissions():
 
 @admin_bp.route('/admissions/<int:application_id>/<action>', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def review_admission(application_id, action):
     """Accept or reject an admission application."""
     application = AdmissionApplication.query.filter_by(
@@ -620,13 +728,19 @@ def review_admission(application_id, action):
         tenant_id=g.current_tenant_id,
         name=application.applicant_name,
         email=email,
-        role='student'
+        role='student',
+        is_approved=True
     )
     student.set_password(password)
     db.session.add(student)
     db.session.flush()
 
     if class_id and term_id:
+        class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first()
+        if _admin_section() and (not class_obj or class_obj.section != _admin_section()):
+            db.session.rollback()
+            flash('Selected class is outside your section workspace.', 'error')
+            return redirect(url_for('admin.admissions'))
         enrollment = StudentClass(
             tenant_id=g.current_tenant_id,
             student_id=student.id,
@@ -657,13 +771,90 @@ def review_admission(application_id, action):
     return redirect(url_for('admin.admissions'))
 
 
-@admin_bp.route('/payments')
+@admin_bp.route('/payments', methods=['GET', 'POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def payments():
     """Manage student payment status and portal access."""
     active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
-    students = User.query.filter_by(tenant_id=g.current_tenant_id, role='student').order_by(User.name).all()
+    classes = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id)).order_by(Class.name).all()
+    class_ids = [class_obj.id for class_obj in classes]
+    categories = FeeCategory.query.filter_by(tenant_id=g.current_tenant_id).order_by(FeeCategory.name).all()
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'category':
+            name = (request.form.get('name') or '').strip()
+            if not name:
+                flash('Fee category name is required.', 'error')
+                return redirect(url_for('admin.payments'))
+            existing = FeeCategory.query.filter_by(tenant_id=g.current_tenant_id, name=name).first()
+            if not existing:
+                db.session.add(FeeCategory(
+                    tenant_id=g.current_tenant_id,
+                    name=name,
+                    description=request.form.get('description') or None,
+                    is_active=request.form.get('is_active') == 'on'
+                ))
+                db.session.commit()
+            flash('Fee category saved.', 'success')
+            return redirect(url_for('admin.payments'))
+
+        if action == 'plan':
+            category_id = request.form.get('fee_category_id')
+            class_id = request.form.get('class_id') or None
+            term_id = request.form.get('term_id') or (active_term.id if active_term else None)
+            amount = float(request.form.get('amount') or 0)
+            category = FeeCategory.query.filter_by(id=category_id, tenant_id=g.current_tenant_id).first()
+            class_obj = None
+            if class_id:
+                class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first()
+            if not category or (class_id and (not class_obj or class_obj.id not in class_ids)):
+                flash('Invalid category or class for this school workspace.', 'error')
+                return redirect(url_for('admin.payments'))
+
+            plan = FeeInstallmentPlan(
+                tenant_id=g.current_tenant_id,
+                fee_category_id=category.id,
+                class_id=class_obj.id if class_obj else None,
+                term_id=term_id,
+                amount=amount,
+                installments_enabled=request.form.get('installments_enabled') == 'on'
+            )
+            db.session.add(plan)
+            db.session.flush()
+
+            milestones = _parse_installment_milestones(
+                request.form.getlist('milestone_label'),
+                request.form.getlist('milestone_percentage'),
+                request.form.getlist('milestone_due_date')
+            )
+            total_percentage = sum(item['percentage'] for item in milestones)
+            if plan.installments_enabled and round(total_percentage, 2) != 100:
+                db.session.rollback()
+                flash('Installment milestones must add up to 100%.', 'error')
+                return redirect(url_for('admin.payments'))
+
+            for milestone in milestones:
+                db.session.add(FeeInstallmentMilestone(
+                    tenant_id=g.current_tenant_id,
+                    plan_id=plan.id,
+                    label=milestone['label'],
+                    percentage=milestone['percentage'],
+                    due_date=milestone['due_date']
+                ))
+
+            db.session.commit()
+            flash('Fee plan saved.', 'success')
+            return redirect(url_for('admin.payments'))
+
+    students_query = User.query.filter_by(tenant_id=g.current_tenant_id, role='student')
+    if _admin_section():
+        students_query = students_query.join(StudentClass, StudentClass.student_id == User.id).filter(
+            StudentClass.tenant_id == g.current_tenant_id,
+            StudentClass.class_id.in_(class_ids or [0])
+        ).distinct()
+    students = students_query.order_by(User.name).all()
     access_records = []
 
     if active_term:
@@ -686,12 +877,22 @@ def payments():
             term_id=active_term.id
         ).all()
 
-    return render_template('portal/admin_payments.html', active_term=active_term, access_records=access_records)
+    plans = FeeInstallmentPlan.query.filter_by(tenant_id=g.current_tenant_id).order_by(FeeInstallmentPlan.created_at.desc()).all()
+    transactions = PaymentTransaction.query.filter_by(tenant_id=g.current_tenant_id).order_by(PaymentTransaction.created_at.desc()).limit(20).all()
+    return render_template(
+        'portal/admin_payments.html',
+        active_term=active_term,
+        access_records=access_records,
+        categories=categories,
+        plans=plans,
+        classes=classes,
+        transactions=transactions
+    )
 
 
 @admin_bp.route('/payments/<int:access_id>/mark-paid', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def mark_payment_paid(access_id):
     access = StudentTermAccess.query.filter_by(
         id=access_id,
@@ -711,7 +912,7 @@ def mark_payment_paid(access_id):
 
 @admin_bp.route('/announcement', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def send_announcement():
     """
     Broadcast an announcement email to parents.
@@ -780,7 +981,7 @@ def send_announcement():
 
 @admin_bp.route('/users', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def create_user():
     """Create a new user (admin, teacher, student, or attendant)."""
     data = request.get_json()
@@ -793,7 +994,7 @@ def create_user():
     if not all([name, email, password, role]):
         return jsonify({'error': 'Missing required fields'}), 400
     
-    if role not in ['admin', 'teacher', 'student', 'attendant', 'parent']:
+    if role not in ['admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent']:
         return jsonify({'error': 'Invalid role'}), 400
     
     # Check if email already exists for this tenant
@@ -809,7 +1010,9 @@ def create_user():
         tenant_id=g.current_tenant_id,
         name=name,
         email=email,
-        role=role
+        role=role,
+        section=data.get('section') or ('primary' if role == 'primary_admin' else ('secondary' if role == 'secondary_admin' else None)),
+        is_approved=True
     )
     user.set_password(password)
     
@@ -836,7 +1039,7 @@ def create_user():
 
 @admin_bp.route('/classes', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def create_class():
     """Create a new class."""
     data = request.get_json()
@@ -846,9 +1049,13 @@ def create_class():
     if not name:
         return jsonify({'error': 'Class name is required'}), 400
     
+    section, arm, track = _class_metadata(name)
     class_obj = Class(
         tenant_id=g.current_tenant_id,
-        name=name
+        name=name,
+        section=section,
+        arm=arm,
+        track=track
     )
     
     db.session.add(class_obj)
@@ -863,7 +1070,7 @@ def create_class():
 
 @admin_bp.route('/subjects', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def create_subject():
     """Create a new subject."""
     data = request.get_json()
@@ -890,7 +1097,7 @@ def create_subject():
 
 @admin_bp.route('/terms', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def create_term():
     """Create a new academic term."""
     data = request.get_json()
@@ -925,7 +1132,7 @@ def create_term():
 
 @admin_bp.route('/assign-teacher', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def assign_teacher():
     """Assign a teacher to a class and subject for a specific term."""
     data = request.get_json()
@@ -989,7 +1196,7 @@ def assign_teacher():
 
 @admin_bp.route('/enroll-student', methods=['POST'])
 @login_required
-@role_required('admin')
+@role_required('local_admin')
 def enroll_student():
     """Enroll a student in a class for a specific term."""
     data = request.get_json()
@@ -1026,3 +1233,207 @@ def enroll_student():
         'success': True,
         'message': 'Student enrolled successfully'
     }), 201
+
+
+@admin_bp.route('/bulk-onboarding', methods=['GET', 'POST'])
+@login_required
+@role_required('local_admin')
+def bulk_onboarding():
+    """Upload CSV/XLSX files to create student or teacher accounts in bulk."""
+    classes = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id)).order_by(Class.name).all()
+    terms = Term.query.filter_by(tenant_id=g.current_tenant_id).order_by(Term.created_at.desc()).all()
+
+    if request.method == 'GET':
+        return render_template('portal/admin_bulk_onboarding.html', classes=classes, terms=terms)
+
+    upload = request.files.get('spreadsheet')
+    account_type = request.form.get('account_type')
+    default_class_id = request.form.get('default_class_id') or None
+    default_term_id = request.form.get('default_term_id') or None
+
+    if account_type not in ['student', 'teacher'] or not upload:
+        flash('Choose a Student or Teacher spreadsheet to upload.', 'error')
+        return redirect(url_for('admin.bulk_onboarding'))
+
+    try:
+        import pandas as pd
+
+        filename = (upload.filename or '').lower()
+        if filename.endswith('.csv'):
+            frame = pd.read_csv(upload)
+        elif filename.endswith(('.xlsx', '.xls')):
+            frame = pd.read_excel(upload, engine='openpyxl')
+        else:
+            flash('Upload a CSV or Excel file.', 'error')
+            return redirect(url_for('admin.bulk_onboarding'))
+    except ImportError:
+        flash('Bulk onboarding requires pandas and openpyxl to be installed.', 'error')
+        return redirect(url_for('admin.bulk_onboarding'))
+    except Exception as exc:
+        flash(f'Unable to read spreadsheet: {exc}', 'error')
+        return redirect(url_for('admin.bulk_onboarding'))
+
+    required_columns = {'name', 'email'}
+    columns = {str(column).strip().lower(): column for column in frame.columns}
+    if not required_columns.issubset(columns):
+        flash('Spreadsheet must include name and email columns. Password is optional.', 'error')
+        return redirect(url_for('admin.bulk_onboarding'))
+
+    class_ids = {class_obj.id for class_obj in classes}
+    created = 0
+    skipped = []
+
+    for index, row in frame.iterrows():
+        name = str(row[columns['name']]).strip()
+        email = str(row[columns['email']]).strip().lower()
+        password = str(row[columns.get('password')]).strip() if columns.get('password') else 'changeme123'
+        if not name or not email or email == 'nan':
+            skipped.append(f'Row {index + 2}: missing name or email')
+            continue
+
+        if User.query.filter_by(tenant_id=g.current_tenant_id, email=email).first():
+            skipped.append(f'Row {index + 2}: duplicate email {email}')
+            continue
+
+        user = User(
+            tenant_id=g.current_tenant_id,
+            name=name,
+            email=email,
+            role=account_type,
+            is_approved=True
+        )
+        user.set_password(password)
+        db.session.add(user)
+        db.session.flush()
+
+        class_id = default_class_id
+        if columns.get('class_id') and not row.isna()[columns['class_id']]:
+            class_id = int(row[columns['class_id']])
+        term_id = default_term_id
+        if columns.get('term_id') and not row.isna()[columns['term_id']]:
+            term_id = int(row[columns['term_id']])
+        if account_type == 'student' and class_id and term_id and int(class_id) in class_ids:
+            db.session.add(StudentClass(
+                tenant_id=g.current_tenant_id,
+                student_id=user.id,
+                class_id=int(class_id),
+                term_id=int(term_id)
+            ))
+        created += 1
+
+    db.session.commit()
+    flash(f'Bulk onboarding complete. Created {created} accounts. Skipped {len(skipped)} rows.', 'success')
+    return render_template('portal/admin_bulk_onboarding.html', classes=classes, terms=terms, skipped=skipped)
+
+
+@admin_bp.route('/payment-webhook/<provider>', methods=['POST'])
+def payment_webhook(provider):
+    """Receive Paystack/Flutterwave-style payment callbacks and update balances."""
+    if provider not in ['paystack', 'flutterwave']:
+        return jsonify({'error': 'Unsupported payment provider'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    data = payload.get('data') or payload
+    metadata = data.get('metadata') or data.get('meta') or {}
+    reference = data.get('reference') or data.get('tx_ref') or data.get('flw_ref')
+    status = (data.get('status') or payload.get('event') or '').lower()
+
+    try:
+        tenant_id = int(metadata.get('tenant_id'))
+        student_id = int(metadata.get('student_id'))
+        term_id = int(metadata.get('term_id')) if metadata.get('term_id') else None
+        amount = float(data.get('amount') or 0)
+        if provider == 'paystack' and amount > 1000:
+            amount = amount / 100
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Webhook metadata must include tenant_id and student_id'}), 400
+
+    if not reference:
+        return jsonify({'error': 'Payment reference is required'}), 400
+
+    transaction = PaymentTransaction.query.filter_by(provider=provider, reference=reference).first()
+    if not transaction:
+        transaction = PaymentTransaction(
+            tenant_id=tenant_id,
+            student_id=student_id,
+            term_id=term_id,
+            provider=provider,
+            reference=reference
+        )
+        db.session.add(transaction)
+
+    transaction.amount = amount
+    transaction.status = status or 'success'
+    transaction.raw_payload = payload
+
+    if transaction.status in ['success', 'successful', 'charge.success']:
+        access = StudentTermAccess.query.filter_by(
+            tenant_id=tenant_id,
+            student_id=student_id,
+            term_id=term_id
+        ).first()
+        if access:
+            access.amount_paid = (access.amount_paid or 0) + amount
+            access.payment_reference = reference
+            access.is_paid = access.amount_paid >= (access.amount_due or 0)
+            access.portal_unlocked = access.is_paid
+
+    db.session.commit()
+    return jsonify({'success': True}), 200
+
+
+@admin_bp.route('/api/offline-sync/assignments', methods=['POST'])
+@admin_bp.route('/api/offline-sync/quiz-submissions', methods=['POST'])
+@login_required
+@role_required('student')
+def offline_sync_assignments():
+    """Accept queued assignment/quiz payloads from low-bandwidth clients."""
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items') or []
+    if not isinstance(items, list):
+        return jsonify({'error': 'items must be an array'}), 400
+
+    synced = []
+    for item in items:
+        assignment_id = item.get('assignment_id')
+        client_sync_id = item.get('client_sync_id')
+        if not assignment_id or not client_sync_id:
+            synced.append({'client_sync_id': client_sync_id, 'status': 'rejected'})
+            continue
+
+        assignment = Assignment.query.filter_by(
+            id=assignment_id,
+            tenant_id=current_user.tenant_id,
+            is_published=True
+        ).first()
+        if not assignment:
+            synced.append({'client_sync_id': client_sync_id, 'status': 'missing_assignment'})
+            continue
+
+        submission = AssignmentSubmission.query.filter_by(
+            tenant_id=current_user.tenant_id,
+            client_sync_id=client_sync_id
+        ).first()
+        if not submission:
+            submission = AssignmentSubmission.query.filter_by(
+                tenant_id=current_user.tenant_id,
+                assignment_id=assignment.id,
+                student_id=current_user.id
+            ).first()
+
+        if not submission:
+            submission = AssignmentSubmission(
+                tenant_id=current_user.tenant_id,
+                assignment_id=assignment.id,
+                student_id=current_user.id,
+                client_sync_id=client_sync_id
+            )
+            db.session.add(submission)
+
+        submission.submission_text = item.get('submission_text') or submission.submission_text
+        submission.quiz_answers = item.get('quiz_answers') or submission.quiz_answers
+        submission.submitted_at = datetime.utcnow()
+        synced.append({'client_sync_id': client_sync_id, 'status': 'synced'})
+
+    db.session.commit()
+    return jsonify({'success': True, 'items': synced}), 200

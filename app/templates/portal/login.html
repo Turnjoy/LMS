@@ -115,9 +115,7 @@
 {% block content %}
 <div class="auth-shell">
     <section class="auth-panel brand-panel">
-        {% if tenant and tenant.logo_url %}
-        <img src="{{ tenant.logo_url }}" alt="School Logo" class="auth-logo">
-        {% endif %}
+        <img src="{{ tenant.logo_url if tenant and tenant.logo_url else url_for('static', filename='images/turnjoy.png') }}" alt="School Logo" class="auth-logo">
         <div>
             <h1>{% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}</h1>
             <p>One portal for staff, parents, guardians, and students to manage school work, communication, admissions, payments, attendance, and results.</p>

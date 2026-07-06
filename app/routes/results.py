@@ -127,7 +127,7 @@ def publish_result(result_id):
 
 @results_bp.route('/student/<int:student_id>')
 @login_required
-@role_required('teacher', 'student', 'admin')
+@role_required('teacher', 'student', 'local_admin')
 def get_student_results(student_id):
     """Get all results for a specific student."""
     # If student, only allow viewing own results
