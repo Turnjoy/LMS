@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Guided Setup - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Guided School Setup</h1>
+    <p style="color: #666; margin-top: 8px;">Choose the school structure. Automatic creates classes for you. Hybrid creates them but still lets you edit later.</p>
+</div>
+
+<form method="POST" action="{{ url_for('admin.setup_wizard') }}" class="card">
+    <div class="form-group">
+        <label for="setup_mode">Setup Mode</label>
+        <select id="setup_mode" name="setup_mode">
+            <option value="hybrid">Hybrid - generate then edit</option>
+            <option value="automatic">Automatic - generate everything selected</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="school_type">School Type</label>
+        <select id="school_type" name="school_type">
+            <option value="combined">Combined School</option>
+            <option value="primary">Primary School</option>
+            <option value="secondary">Secondary School</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Sections To Create</label>
+        <label><input type="checkbox" name="sections" value="kg"> KG 1-3</label><br>
+        <label><input type="checkbox" name="sections" value="nursery"> Nursery 1-3</label><br>
+        <label><input type="checkbox" name="sections" value="primary"> Primary 1-6</label><br>
+        <label><input type="checkbox" name="sections" value="jss"> JSS 1-3</label><br>
+        <label><input type="checkbox" name="sections" value="sss"> SSS 1-3</label>
+    </div>
+
+    <div class="form-group">
+        <label for="arms">Class Arms/Subdivisions</label>
+        <input id="arms" name="arms" value="A,B,C" placeholder="A,B,C,D">
+        <p style="color: #666;">Use A-Z style arms. Example: A,B,C creates KG 1A, KG 1B, KG 1C.</p>
+    </div>
+
+    <div class="form-group">
+        <label>Primary & JSS Core Subjects</label>
+        <p style="color: #666; margin-bottom: 8px;">These are assigned automatically to Primary and JSS classes.</p>
+        {% for subject in primary_jss_core_subjects %}
+        <label><input type="checkbox" checked disabled> {{ subject }}</label><br>
+        {% endfor %}
+    </div>
+
+    <div class="form-group">
+        <label>Primary & JSS Extra Modular Options</label>
+        <p style="color: #666; margin-bottom: 8px;">Selected extras are added to every generated Primary and JSS class. You can fine-tune per class on the Class Subjects page.</p>
+        {% for subject in primary_jss_extra_options %}
+        <label><input type="checkbox" name="primary_jss_extras" value="{{ subject }}"> {{ subject }}</label><br>
+        {% endfor %}
+    </div>
+
+    <div class="form-group">
+        <label>SSS Departments</label>
+        <label><input type="checkbox" name="sss_tracks" value="Science" checked> Science</label><br>
+        <label><input type="checkbox" name="sss_tracks" value="Humanities" checked> Humanities</label><br>
+        <label><input type="checkbox" name="sss_tracks" value="Commercial" checked> Commercial</label>
+    </div>
+
+    <div class="form-group">
+        <label>SSS Mandatory Core</label>
+        <p style="color: #666; margin-bottom: 8px;">All SSS classes receive Mathematics, English Language, and Civic Education. Science classes receive Biology; Commercial and Humanities classes receive Economics.</p>
+        {% for subject in sss_core_subjects %}
+        <label><input type="checkbox" checked disabled> {{ subject }}</label><br>
+        {% endfor %}
+    </div>
+
+    <div class="form-group">
+        <label>SSS Track Blocks</label>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 10px;">
+            {% for track, subjects in sss_track_subjects.items() %}
+            <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+                <strong>{{ track }}</strong>
+                <ul style="margin: 8px 0 0 18px;">
+                    {% for subject in subjects %}
+                    <li>{{ subject }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>SSS Extra Electives</label>
+        <p style="color: #666; margin-bottom: 8px;">Selected electives are added to every generated SSS class. Use Class Subjects afterward to assign them to specific classrooms only.</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;">
+            {% for subject in sss_extra_electives %}
+            <label><input type="checkbox" name="sss_extra_electives" value="{{ subject }}"> {{ subject }}</label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Generate Classes & Subject Matrix</button>
+    <a href="{{ url_for('admin.setup_school') }}" class="btn btn-secondary">Back To Setup</a>
+</form>
+{% endblock %}

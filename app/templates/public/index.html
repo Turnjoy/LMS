@@ -1,0 +1,29 @@
+{% extends 'public/base.html' %}
+
+{% block title %}Home - Turnjoy LMS{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>School administration that stays separate from your public marketing website.</h1>
+    <p style="max-width: 680px; margin-top: 18px; line-height: 1.7;">Turnjoy LMS now uses domain-based tenant routing so each school has its own admin portal, while the root marketing domain stays focused on Home, About, Pricing, and Contact.</p>
+    <div style="margin-top: 28px; display: flex; gap: 14px; flex-wrap: wrap;">
+        <a class="btn btn-primary" href="{{ url_for('public.about') }}">Learn More</a>
+        <a class="btn btn-secondary" href="{{ url_for('public.pricing') }}">View Pricing</a>
+    </div>
+</div>
+
+<section class="section grid">
+    <div class="card">
+        <h2>Global Branding</h2>
+        <p>Root domain serves only public marketing content. No generic admin dashboard is exposed here.</p>
+    </div>
+    <div class="card">
+        <h2>School Domains</h2>
+        <p>Each tenant maps its own domain or subdomain and uses /admin to access its local admin login.</p>
+    </div>
+    <div class="card">
+        <h2>Hidden Master HQ</h2>
+        <p>Secret owner access is available through a hidden global path with a complete school registry view.</p>
+    </div>
+</section>
+{% endblock %}

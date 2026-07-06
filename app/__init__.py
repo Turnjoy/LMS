@@ -51,14 +51,16 @@ def create_app(config_name='default'):
         return User.query.filter_by(id=int(user_id)).first()
     
     # Register blueprints
-    from app.routes.auth import auth_bp
+    from app.routes.public import public_bp
+    from app.routes.portal import auth_bp as portal_auth_bp
     from app.routes.admin import admin_bp
     from app.routes.results import results_bp
     from app.routes.attendance import attendance_bp
     from app.routes.api_subjects import api_subjects_bp
     from app.routes.cbt import cbt_bp
     
-    app.register_blueprint(auth_bp)
+    app.register_blueprint(public_bp)
+    app.register_blueprint(portal_auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(results_bp)
     app.register_blueprint(attendance_bp)
@@ -103,8 +105,6 @@ def create_app(config_name='default'):
                 tenant = Tenant.query.filter_by(custom_domain=_normalize_host(env_domain)).first()
             if not tenant and env_subdomain:
                 tenant = Tenant.query.filter_by(subdomain=env_subdomain).first()
-            if not tenant:
-                tenant = Tenant.query.first()
 
             if tenant:
                 g.current_tenant_id = tenant.id

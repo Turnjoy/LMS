@@ -127,6 +127,7 @@
         <a href="{{ url_for('admin.setup_school') }}" class="btn btn-secondary">School Setup</a>
         <a href="{{ url_for('admin.setup_wizard') }}" class="btn btn-primary">Guided Setup</a>
         <a href="{{ url_for('admin.class_subjects') }}" class="btn btn-secondary">Class Subjects</a>
+        <a href="{{ url_for('admin.teacher_assignments') }}" class="btn btn-primary">Teacher Assignments</a>
         <a href="{{ url_for('admin.admissions') }}" class="btn btn-primary">Admissions</a>
         <a href="{{ url_for('admin.payments') }}" class="btn btn-secondary">Payments</a>
     </div>
@@ -160,17 +161,17 @@
     <h2>Teacher Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('results.dashboard') }}" class="btn btn-primary">Results Workspace</a>
-        <a href="{{ url_for('auth.index') }}" class="btn btn-secondary">School Home</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
 
 <div class="dashboard-grid">
     <div class="stat-card">
-        <h3>0</h3>
+        <h3>{{ stats.my_classes if stats else 0 }}</h3>
         <p>My Classes</p>
     </div>
     <div class="stat-card">
-        <h3>0</h3>
+        <h3>{{ stats.my_subjects if stats else 0 }}</h3>
         <p>My Subjects</p>
     </div>
     <div class="stat-card">
@@ -182,6 +183,20 @@
         <p>Results Submitted</p>
     </div>
 </div>
+
+{% if teacher_assignments %}
+<div class="card" style="margin-top: 30px;">
+    <h2>My Subject-Class Arms</h2>
+    <div class="module-list">
+        {% for assignment in teacher_assignments %}
+        <div class="module-item">
+            <h3>{{ assignment.subject.name if assignment.subject else 'Subject' }}</h3>
+            <p>{{ assignment.class_obj.name if assignment.class_obj else 'Class' }}{% if assignment.term %} - {{ assignment.term.name }} {{ assignment.term.session }}{% endif %}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 {% elif current_user.role == 'student' %}
 <div class="quick-actions">
@@ -217,7 +232,7 @@
     <h2>Attendant Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('attendance.dashboard') }}" class="btn btn-primary">Attendance Workspace</a>
-        <a href="{{ url_for('auth.index') }}" class="btn btn-secondary">School Home</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
 
@@ -245,7 +260,7 @@
     <h2>Parent Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-primary">Apply For Admission</a>
-        <a href="{{ url_for('auth.index') }}" class="btn btn-secondary">School Home</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
 

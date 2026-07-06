@@ -18,7 +18,15 @@ class Tenant(db.Model):
     logo_url = db.Column(db.String(255))
     primary_color = db.Column(db.String(7), default='#3498db')
     secondary_color = db.Column(db.String(7), default='#2ecc71')
+    sections = db.Column(db.String(20), default='both')  # primary, secondary, both
+    sss_tracks = db.Column(db.String(120), default='Science,Humanities,Commercial')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def structured_code(self):
+        year = self.created_at.year if self.created_at else datetime.utcnow().year
+        prefix = self.name.split()[0].upper() if self.name else 'SCH'
+        return f'{prefix}/{year}/{self.id:03d}'
     
     # Relationships
     users = db.relationship('User', backref='tenant', lazy='dynamic', cascade='all, delete-orphan')
@@ -199,7 +207,8 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), nullable=False)  # 'admin', 'teacher', 'student', 'attendant'
+    role = db.Column(db.String(20), nullable=False)  # 'super_admin', 'admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent'
+    section = db.Column(db.String(20), default=None)  # 'primary', 'secondary', or None for global roles
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     

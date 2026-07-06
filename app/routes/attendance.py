@@ -13,7 +13,7 @@ attendance_bp = Blueprint('attendance', __name__, url_prefix='/attendance')
 @role_required('attendant')
 def dashboard():
     """Attendant dashboard for attendance management."""
-    return render_template('dashboard.html')
+    return render_template('portal/dashboard.html')
 
 
 @attendance_bp.route('/', methods=['POST'])

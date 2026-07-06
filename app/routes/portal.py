@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, g
+from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 from app.models import (
@@ -19,6 +19,11 @@ from app import db
 
 auth_bp = Blueprint('auth', __name__)
 
+@auth_bp.before_request
+def require_tenant_context():
+    if not getattr(g, 'current_tenant', None):
+        abort(404)
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user authentication with multi-tenant data separation."""
@@ -29,7 +34,7 @@ def login():
         # Check if tenant context is set
         if not hasattr(g, 'current_tenant_id') or g.current_tenant_id is None:
             flash('System error: Tenant not found. Please contact administrator.', 'error')
-            return render_template('login.html', admin_exists=False)
+            return render_template('portal/login.html', admin_exists=False)
         
         # Query user by email AND current tenant ID for multi-tenant isolation
         user = User.query.filter_by(
@@ -48,6 +53,10 @@ def login():
             # Role-based redirect after successful login
             if user.role == 'admin':
                 return redirect(url_for('admin.dashboard'))
+            elif user.role == 'primary_admin':
+                return redirect(url_for('admin.dashboard'))
+            elif user.role == 'secondary_admin':
+                return redirect(url_for('admin.dashboard'))
             elif user.role == 'teacher':
                 return redirect(url_for('results.dashboard'))
             elif user.role == 'student':
@@ -61,7 +70,7 @@ def login():
         else:
             flash('Invalid credentials', 'error')
     
-    return render_template('login.html', admin_exists=_admin_exists())
+    return render_template('portal/login.html', admin_exists=_admin_exists())
 
 @auth_bp.route('/logout')
 @login_required
@@ -70,24 +79,6 @@ def logout():
     logout_user()
     return redirect(url_for('auth.login'))
 
-@auth_bp.route('/')
-def index():
-    """Home page / index route - shows landing page."""
-    if current_user.is_authenticated:
-        # Redirect to appropriate dashboard based on role
-        if current_user.role == 'admin':
-            return redirect(url_for('admin.dashboard'))
-        elif current_user.role == 'teacher':
-            return redirect(url_for('results.dashboard'))
-        elif current_user.role == 'student':
-            return redirect(url_for('auth.student_dashboard'))
-        elif current_user.role == 'attendant':
-            return redirect(url_for('attendance.dashboard'))
-        elif current_user.role == 'parent':
-            return redirect(url_for('auth.parent_dashboard'))
-    profile = TenantPublicProfile.query.filter_by(tenant_id=g.current_tenant_id).first()
-    classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
-    return render_template('landing.html', profile=profile, classes=classes)
 
 
 def _student_portal_is_locked(user):
@@ -136,7 +127,7 @@ def apply_admission():
 
     if profile and not profile.admission_open:
         flash('Admission application is currently closed.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.login'))
 
     classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
 
@@ -144,7 +135,7 @@ def apply_admission():
         required = ['applicant_name', 'parent_name', 'parent_email', 'parent_phone']
         if not all(request.form.get(field, '').strip() for field in required):
             flash('Please complete all required fields.', 'error')
-            return render_template('admission_apply.html', classes=classes)
+            return render_template('portal/admission_apply.html', classes=classes)
 
         application = AdmissionApplication(
             tenant_id=g.current_tenant_id,
@@ -160,9 +151,9 @@ def apply_admission():
         db.session.commit()
 
         flash('Admission application submitted. The school will review it and contact you.', 'success')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('public.index'))
 
-    return render_template('admission_apply.html', classes=classes)
+    return render_template('portal/admission_apply.html', classes=classes)
 
 
 @auth_bp.route('/portal-locked')
@@ -170,7 +161,7 @@ def apply_admission():
 def portal_locked():
     payment_settings = PaymentGatewaySetting.query.filter_by(tenant_id=current_user.tenant_id).first()
     active_term = Term.query.filter_by(tenant_id=current_user.tenant_id, is_active=True).first()
-    return render_template('portal_locked.html', payment_settings=payment_settings, active_term=active_term)
+    return render_template('portal/portal_locked.html', payment_settings=payment_settings, active_term=active_term)
 
 
 @auth_bp.route('/student/register-term', methods=['GET', 'POST'])
@@ -179,12 +170,12 @@ def student_term_registration():
     """Returning student term registration with subject selection."""
     if current_user.role != 'student':
         flash('Only students can complete term registration.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.login'))
 
     active_term = Term.query.filter_by(tenant_id=current_user.tenant_id, is_active=True).first()
     if not active_term:
         flash('No active term is available for registration.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.login'))
 
     classes = Class.query.filter_by(tenant_id=current_user.tenant_id).order_by(Class.name).all()
     subjects = Subject.query.filter_by(tenant_id=current_user.tenant_id).order_by(Subject.name).all()
@@ -204,8 +195,7 @@ def student_term_registration():
         if not class_id:
             flash('Please select your class.', 'error')
             return render_template(
-                'student_term_registration.html',
-                active_term=active_term,
+            'portal/student_term_registration.html',
                 classes=classes,
                 subjects=subjects,
                 subject_map=subject_map,
@@ -279,7 +269,7 @@ def student_term_registration():
     }
 
     return render_template(
-        'student_term_registration.html',
+        'portal/student_term_registration.html',
         active_term=active_term,
         classes=classes,
         subjects=subjects,
@@ -297,7 +287,7 @@ def student_dashboard():
     if _student_portal_is_locked(current_user):
         flash('Your portal is locked for this term until payment is confirmed.', 'error')
         return redirect(url_for('auth.portal_locked'))
-    return render_template('dashboard.html')
+    return render_template('portal/dashboard.html')
 
 
 @auth_bp.route('/parent/dashboard')
@@ -306,9 +296,9 @@ def parent_dashboard():
     """Parent dashboard route."""
     if current_user.role != 'parent':
         flash('Only parents or guardians can access the parent dashboard.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.login'))
 
-    return render_template('dashboard.html')
+    return render_template('portal/dashboard.html')
 
 
 @auth_bp.route('/signup', methods=['GET', 'POST'])
@@ -317,7 +307,7 @@ def signup():
     admin_exists = _admin_exists()
 
     if request.method == 'GET':
-        return render_template('login.html', admin_exists=admin_exists)
+        return render_template('portal/login.html', admin_exists=admin_exists)
 
     name = request.form.get('name')
     email = request.form.get('email')
@@ -326,22 +316,16 @@ def signup():
     
     if not all([name, email, password, role]):
         flash('All fields are required', 'error')
-        return render_template('login.html', admin_exists=admin_exists)
+        return render_template('portal/login.html', admin_exists=admin_exists)
     
-    if role not in ['admin', 'teacher', 'attendant', 'parent']:
+    if role not in ['admin', 'primary_admin', 'secondary_admin', 'teacher', 'attendant', 'parent']:
         flash('Invalid role selected', 'error')
-        return render_template('login.html', admin_exists=admin_exists)
-
-    if role == 'admin' and admin_exists:
-        flash('This school already has an admin. Ask the admin to create your account.', 'error')
-        return render_template('login.html', admin_exists=admin_exists)
+        return render_template('portal/login.html', admin_exists=admin_exists)
     
     # Check if tenant context is set
     if not hasattr(g, 'current_tenant_id') or g.current_tenant_id is None:
         flash('System error: Tenant not found. Please contact administrator.', 'error')
-        return render_template('login.html', admin_exists=admin_exists)
-    
-    # Check if email already exists for this tenant
+        return render_template('portal/login.html', admin_exists=admin_exists)
     existing = User.query.filter_by(
         tenant_id=g.current_tenant_id,
         email=email
@@ -349,7 +333,7 @@ def signup():
     
     if existing:
         flash('Email already registered', 'error')
-        return render_template('login.html', admin_exists=admin_exists)
+        return render_template('portal/login.html', admin_exists=admin_exists)
     
     # Create new user
     user = User(

@@ -12,7 +12,19 @@ results_bp = Blueprint('results', __name__, url_prefix='/results')
 @role_required('teacher')
 def dashboard():
     """Teacher dashboard for viewing and managing results."""
-    return render_template('dashboard.html')
+    assignments = TeacherAssignment.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        teacher_id=current_user.id
+    ).all()
+    stats = {
+        'my_classes': len({assignment.class_id for assignment in assignments}),
+        'my_subjects': len({assignment.subject_id for assignment in assignments}),
+    }
+    return render_template(
+        'portal/dashboard.html',
+        stats=stats,
+        teacher_assignments=assignments
+    )
 
 
 @results_bp.route('/', methods=['POST'])

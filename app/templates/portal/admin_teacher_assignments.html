@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Teacher Assignments - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Teacher-Subject Allocation</h1>
+    <p style="color: #666; margin-top: 8px;">Assign teachers only to subject and class arm combinations already configured in the class subject matrix.</p>
+</div>
+
+{% if not active_term %}
+<div class="card">
+    <p>Create or activate a term before assigning teachers.</p>
+    <a href="{{ url_for('admin.setup_school') }}" class="btn btn-primary">Go To School Setup</a>
+</div>
+{% elif not teachers or not classes or not subjects %}
+<div class="card">
+    <p>Create teachers, classes, and class subjects before assigning teachers.</p>
+    <a href="{{ url_for('admin.class_subjects') }}" class="btn btn-primary">Class Subjects</a>
+</div>
+{% else %}
+<form method="POST" action="{{ url_for('admin.teacher_assignments') }}" class="card">
+    <div class="form-group">
+        <label for="teacher_id">Teacher</label>
+        <select id="teacher_id" name="teacher_id" required>
+            {% for teacher in teachers %}
+            <option value="{{ teacher.id }}">{{ teacher.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="class_id">Class Arm</label>
+        <select id="class_id" name="class_id" required>
+            {% for class_obj in classes %}
+            <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="subject_id">Subject</label>
+        <select id="subject_id" name="subject_id" required>
+            {% for subject in subjects %}
+            <option value="{{ subject.id }}">{{ subject.name }}</option>
+            {% endfor %}
+        </select>
+        <p style="color: #666; margin-top: 8px;">The backend validates this against the selected class arm before saving.</p>
+    </div>
+
+    <div class="form-group">
+        <label for="term_id">Term</label>
+        <select id="term_id" name="term_id" required>
+            {% for term in terms %}
+            <option value="{{ term.id }}" {% if active_term and term.id == active_term.id %}selected{% endif %}>{{ term.name }} - {{ term.session }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Assign Teacher</button>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">Back To Dashboard</a>
+</form>
+{% endif %}
+
+<div class="card">
+    <h2>Current Assignments</h2>
+    {% if assignments %}
+    <div style="display: grid; gap: 10px; margin-top: 14px;">
+        {% for assignment in assignments %}
+        <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+            <strong>{{ assignment.teacher.name if assignment.teacher else 'Teacher' }}</strong>
+            <span style="color: #666;">assigned to</span>
+            {{ assignment.subject.name if assignment.subject else 'Subject' }} -
+            {{ assignment.class_obj.name if assignment.class_obj else 'Class' }}
+            <span style="color: #666;">({{ assignment.term.name if assignment.term else 'Term' }})</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p style="color: #666; margin-top: 10px;">No teacher assignments yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

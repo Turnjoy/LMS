@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Turnjoy LMS{% endblock %}</title>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fbff; color: #222; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 28px 22px; }
+        header, footer { background: #0c3250; color: white; }
+        header { padding: 20px 0; }
+        .brand { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+        .brand h1 { margin: 0; font-size: 1.8rem; }
+        .nav { display: flex; gap: 18px; flex-wrap: wrap; }
+        .nav a { color: white; text-decoration: none; font-weight: 600; }
+        main { padding: 40px 0; }
+        .hero { background: white; border-radius: 18px; padding: 42px; box-shadow: 0 24px 60px rgba(16, 45, 85, 0.08); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 20px; border-radius: 999px; font-weight: 700; text-decoration: none; }
+        .btn-primary { background: #0c3250; color: white; }
+        .btn-secondary { background: white; color: #0c3250; border: 1px solid #e5e9f0; }
+        .section { margin-top: 42px; }
+        .grid { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+        .card { background: white; border-radius: 18px; padding: 24px; box-shadow: 0 14px 35px rgba(16, 45, 85, 0.06); }
+        .footer { padding: 24px 0; text-align: center; font-size: 0.95rem; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+<header>
+    <div class="container brand">
+        <div>
+            <h1>Turnjoy LMS</h1>
+            <p style="opacity: .85;">Global school management for marketing and tenant domains.</p>
+        </div>
+        <nav class="nav">
+            <a href="{{ url_for('public.index') }}">Home</a>
+            <a href="{{ url_for('public.about') }}">About</a>
+            <a href="{{ url_for('public.pricing') }}">Pricing</a>
+            <a href="{{ url_for('public.contact') }}">Contact</a>
+        </nav>
+    </div>
+</header>
+<main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="notification" style="margin-bottom: 24px;">
+            {% for category, message in messages %}
+                <div style="padding: 14px 18px; border-radius: 12px; background: {% if category == 'error' %}#fdecea{% elif category == 'success' %}#e6f5e9{% else %}#eef6ff{% endif %}; color: {% if category == 'error' %}#9d2b29{% elif category == 'success' %}#216e3a{% else %}#1d4d7a{% endif %}; margin-bottom: 12px;">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</main>
+<footer class="footer">
+    <div class="container">&copy; {{ now().year if now is defined else '2026' }} Turnjoy LMS. Built for multi-tenant school platforms.</div>
+</footer>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

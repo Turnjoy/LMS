@@ -17,6 +17,7 @@ from app.models import (
     StudentParent,
     StudentClass,
     TenantAISetting,
+    TeacherAssignment,
 )
 from app.decorators import role_required
 from app import db
@@ -24,6 +25,45 @@ from sqlalchemy import or_
 from datetime import datetime
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+PRIMARY_JSS_CORE_SUBJECTS = [
+    'Mathematics',
+    'English Language',
+    'Basic Science and Technology',
+]
+
+PRIMARY_JSS_EXTRA_OPTIONS = [
+    'Christian Religious Studies (CRS)',
+    'Islamic Religious Studies (IRS)',
+    'French',
+    'Computer Studies/ICT',
+    'Agricultural Science',
+    'Home Economics',
+]
+
+SSS_CORE_SUBJECTS = [
+    'Mathematics',
+    'English Language',
+    'Civic Education',
+]
+
+SSS_TRACK_SUBJECTS = {
+    'Science': ['Biology', 'Physics', 'Chemistry', 'Further Mathematics'],
+    'Commercial': ['Economics', 'Financial Accounting', 'Commerce'],
+    'Humanities': ['Economics', 'Government', 'Literature-in-English'],
+}
+
+SSS_EXTRA_ELECTIVES = [
+    'Geography',
+    'Technical Drawing',
+    'Marketing',
+    'Computer Studies',
+    'Agricultural Science',
+    'Dyeing & Bleaching',
+    'Data Processing',
+    'Visual Art',
+    'Insurance',
+]
 
 
 def _parse_list(raw_value):
@@ -59,6 +99,102 @@ def _generate_class_names(sections, arms, sss_tracks):
     return generated
 
 
+def _get_or_create_subject(name):
+    subject = Subject.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        name=name
+    ).first()
+    if subject:
+        return subject, False
+
+    subject = Subject(tenant_id=g.current_tenant_id, name=name)
+    db.session.add(subject)
+    db.session.flush()
+    return subject, True
+
+
+def _get_or_create_class_subject(class_id, subject_id, is_required=True):
+    class_subject = ClassSubject.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        class_id=class_id,
+        subject_id=subject_id
+    ).first()
+    if class_subject:
+        if is_required and not class_subject.is_required:
+            class_subject.is_required = True
+        return class_subject, False
+
+    class_subject = ClassSubject(
+        tenant_id=g.current_tenant_id,
+        class_id=class_id,
+        subject_id=subject_id,
+        is_required=is_required
+    )
+    db.session.add(class_subject)
+    return class_subject, True
+
+
+def _class_section(class_name):
+    normalized = (class_name or '').strip().lower()
+    if normalized.startswith(('primary', 'jss')):
+        return 'primary_jss'
+    if normalized.startswith('sss'):
+        return 'sss'
+    return None
+
+
+def _sss_track_for_class(class_name):
+    normalized = (class_name or '').lower()
+    for track in SSS_TRACK_SUBJECTS:
+        if track.lower() in normalized:
+            return track
+    return None
+
+
+def _subjects_for_generated_class(class_name, primary_jss_extras, sss_extra_electives):
+    section = _class_section(class_name)
+    if section == 'primary_jss':
+        return {
+            'required': PRIMARY_JSS_CORE_SUBJECTS,
+            'optional': primary_jss_extras,
+        }
+
+    if section == 'sss':
+        track = _sss_track_for_class(class_name) or 'Science'
+        return {
+            'required': SSS_CORE_SUBJECTS + SSS_TRACK_SUBJECTS.get(track, []),
+            'optional': sss_extra_electives,
+        }
+
+    return {'required': [], 'optional': []}
+
+
+def _apply_curriculum_matrix(classes, primary_jss_extras, sss_extra_electives):
+    created_subjects = 0
+    created_class_subjects = 0
+
+    for class_obj in classes:
+        matrix = _subjects_for_generated_class(
+            class_obj.name,
+            primary_jss_extras,
+            sss_extra_electives
+        )
+
+        for subject_name in matrix['required']:
+            subject, created = _get_or_create_subject(subject_name)
+            created_subjects += int(created)
+            _, linked = _get_or_create_class_subject(class_obj.id, subject.id, is_required=True)
+            created_class_subjects += int(linked)
+
+        for subject_name in matrix['optional']:
+            subject, created = _get_or_create_subject(subject_name)
+            created_subjects += int(created)
+            _, linked = _get_or_create_class_subject(class_obj.id, subject.id, is_required=False)
+            created_class_subjects += int(linked)
+
+    return created_subjects, created_class_subjects
+
+
 @admin_bp.route('/dashboard')
 @login_required
 @role_required('admin')
@@ -71,7 +207,7 @@ def dashboard():
         'active_terms': Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).count(),
         'pending_admissions': AdmissionApplication.query.filter_by(tenant_id=g.current_tenant_id, status='pending').count(),
     }
-    return render_template('dashboard.html', stats=stats)
+    return render_template('portal/dashboard.html', stats=stats)
 
 
 def _split_setup_items(raw_value):
@@ -206,7 +342,7 @@ def setup_school():
     terms = Term.query.filter_by(tenant_id=tenant.id).order_by(Term.created_at.desc()).all()
 
     return render_template(
-        'admin_setup.html',
+        'portal/admin_setup.html',
         classes=classes,
         subjects=subjects,
         terms=terms,
@@ -234,6 +370,8 @@ def setup_wizard():
         sections = request.form.getlist('sections')
         arms = _parse_list(request.form.get('arms')) or ['A']
         sss_tracks = request.form.getlist('sss_tracks') or ['Science', 'Humanities', 'Commercial']
+        primary_jss_extras = request.form.getlist('primary_jss_extras')
+        sss_extra_electives = request.form.getlist('sss_extra_electives')
 
         preference.setup_mode = setup_mode
         preference.school_type = school_type
@@ -242,17 +380,40 @@ def setup_wizard():
         preference.sss_tracks = sss_tracks
 
         created_classes = 0
+        generated_classes = []
         for class_name in _generate_class_names(sections, arms, sss_tracks):
             exists = Class.query.filter_by(tenant_id=g.current_tenant_id, name=class_name).first()
             if not exists:
-                db.session.add(Class(tenant_id=g.current_tenant_id, name=class_name))
+                exists = Class(tenant_id=g.current_tenant_id, name=class_name)
+                db.session.add(exists)
+                db.session.flush()
                 created_classes += 1
+            generated_classes.append(exists)
+
+        created_subjects, created_class_subjects = _apply_curriculum_matrix(
+            generated_classes,
+            primary_jss_extras,
+            sss_extra_electives
+        )
 
         db.session.commit()
-        flash(f'Setup saved. Added {created_classes} generated classes.', 'success')
+        flash(
+            'Setup saved. Added '
+            f'{created_classes} classes, {created_subjects} subjects, '
+            f'and {created_class_subjects} class-subject links.',
+            'success'
+        )
         return redirect(url_for('admin.class_subjects'))
 
-    return render_template('admin_setup_wizard.html', preference=preference)
+    return render_template(
+        'portal/admin_setup_wizard.html',
+        preference=preference,
+        primary_jss_core_subjects=PRIMARY_JSS_CORE_SUBJECTS,
+        primary_jss_extra_options=PRIMARY_JSS_EXTRA_OPTIONS,
+        sss_core_subjects=SSS_CORE_SUBJECTS,
+        sss_track_subjects=SSS_TRACK_SUBJECTS,
+        sss_extra_electives=SSS_EXTRA_ELECTIVES
+    )
 
 
 @admin_bp.route('/class-subjects', methods=['GET', 'POST'])
@@ -291,11 +452,104 @@ def class_subjects():
             required_map.setdefault(item.class_id, set()).add(item.subject_id)
 
     return render_template(
-        'admin_class_subjects.html',
+        'portal/admin_class_subjects.html',
         classes=classes,
         subjects=subjects,
         selected_map=selected_map,
         required_map=required_map
+    )
+
+
+@admin_bp.route('/teacher-assignments', methods=['GET', 'POST'])
+@login_required
+@role_required('admin')
+def teacher_assignments():
+    """Assign teachers to configured subject + class arm combinations."""
+    active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
+    teachers = User.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        role='teacher'
+    ).order_by(User.name).all()
+    classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
+    class_subjects = ClassSubject.query.filter_by(tenant_id=g.current_tenant_id).all()
+    configured_subject_ids = {item.subject_id for item in class_subjects}
+    subjects = Subject.query.filter(
+        Subject.tenant_id == g.current_tenant_id,
+        Subject.id.in_(configured_subject_ids or [0])
+    ).order_by(Subject.name).all()
+
+    if request.method == 'POST':
+        teacher_id = request.form.get('teacher_id')
+        class_id = request.form.get('class_id')
+        subject_id = request.form.get('subject_id')
+        term_id = request.form.get('term_id') or (active_term.id if active_term else None)
+
+        if not all([teacher_id, class_id, subject_id, term_id]):
+            flash('Teacher, class, subject, and term are required.', 'error')
+            return redirect(url_for('admin.teacher_assignments'))
+
+        teacher = User.query.filter_by(
+            id=teacher_id,
+            tenant_id=g.current_tenant_id,
+            role='teacher'
+        ).first()
+        class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first()
+        subject = Subject.query.filter_by(id=subject_id, tenant_id=g.current_tenant_id).first()
+        term = Term.query.filter_by(id=term_id, tenant_id=g.current_tenant_id).first()
+        class_subject = ClassSubject.query.filter_by(
+            tenant_id=g.current_tenant_id,
+            class_id=class_id,
+            subject_id=subject_id
+        ).first()
+
+        if not all([teacher, class_obj, subject, term]):
+            flash('Invalid teacher, class, subject, or term for this school.', 'error')
+            return redirect(url_for('admin.teacher_assignments'))
+
+        if not class_subject:
+            flash('That subject is not configured for the selected class arm.', 'error')
+            return redirect(url_for('admin.teacher_assignments'))
+
+        existing = TeacherAssignment.query.filter_by(
+            tenant_id=g.current_tenant_id,
+            teacher_id=teacher.id,
+            class_id=class_obj.id,
+            subject_id=subject.id,
+            term_id=term.id
+        ).first()
+
+        if existing:
+            flash('This teacher assignment already exists.', 'error')
+            return redirect(url_for('admin.teacher_assignments'))
+
+        db.session.add(TeacherAssignment(
+            tenant_id=g.current_tenant_id,
+            teacher_id=teacher.id,
+            class_id=class_obj.id,
+            subject_id=subject.id,
+            term_id=term.id
+        ))
+        db.session.commit()
+        flash(f'{teacher.name} assigned to {subject.name} - {class_obj.name}.', 'success')
+        return redirect(url_for('admin.teacher_assignments'))
+
+    terms = Term.query.filter_by(tenant_id=g.current_tenant_id).order_by(Term.created_at.desc()).all()
+    assignments = TeacherAssignment.query.filter_by(
+        tenant_id=g.current_tenant_id
+    ).order_by(TeacherAssignment.created_at.desc()).all()
+    class_subject_map = {}
+    for item in class_subjects:
+        class_subject_map.setdefault(item.class_id, []).append(item.subject_id)
+
+    return render_template(
+        'portal/admin_teacher_assignments.html',
+        active_term=active_term,
+        terms=terms,
+        teachers=teachers,
+        classes=classes,
+        subjects=subjects,
+        assignments=assignments,
+        class_subject_map=class_subject_map
     )
 
 
@@ -314,7 +568,7 @@ def admissions():
     active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
 
     return render_template(
-        'admin_admissions.html',
+        'portal/admin_admissions.html',
         applications=applications,
         classes=classes,
         active_term=active_term,
@@ -432,7 +686,7 @@ def payments():
             term_id=active_term.id
         ).all()
 
-    return render_template('admin_payments.html', active_term=active_term, access_records=access_records)
+    return render_template('portal/admin_payments.html', active_term=active_term, access_records=access_records)
 
 
 @admin_bp.route('/payments/<int:access_id>/mark-paid', methods=['POST'])
@@ -674,8 +928,6 @@ def create_term():
 @role_required('admin')
 def assign_teacher():
     """Assign a teacher to a class and subject for a specific term."""
-    from app.models import TeacherAssignment
-    
     data = request.get_json()
     
     teacher_id = data.get('teacher_id')
@@ -685,14 +937,34 @@ def assign_teacher():
     
     if not all([teacher_id, class_id, subject_id, term_id]):
         return jsonify({'error': 'All fields are required'}), 400
+
+    teacher = User.query.filter_by(
+        id=teacher_id,
+        tenant_id=g.current_tenant_id,
+        role='teacher'
+    ).first()
+    class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first()
+    subject = Subject.query.filter_by(id=subject_id, tenant_id=g.current_tenant_id).first()
+    term = Term.query.filter_by(id=term_id, tenant_id=g.current_tenant_id).first()
+
+    if not all([teacher, class_obj, subject, term]):
+        return jsonify({'error': 'Invalid teacher, class, subject, or term for this tenant'}), 400
+
+    class_subject = ClassSubject.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        class_id=class_id,
+        subject_id=subject_id
+    ).first()
+    if not class_subject:
+        return jsonify({'error': 'Subject is not configured for this class arm'}), 400
     
     # Check if assignment already exists
     existing = TeacherAssignment.query.filter_by(
         tenant_id=g.current_tenant_id,
-        teacher_id=teacher_id,
-        class_id=class_id,
-        subject_id=subject_id,
-        term_id=term_id
+        teacher_id=teacher.id,
+        class_id=class_obj.id,
+        subject_id=subject.id,
+        term_id=term.id
     ).first()
     
     if existing:
@@ -700,10 +972,10 @@ def assign_teacher():
     
     assignment = TeacherAssignment(
         tenant_id=g.current_tenant_id,
-        teacher_id=teacher_id,
-        class_id=class_id,
-        subject_id=subject_id,
-        term_id=term_id
+        teacher_id=teacher.id,
+        class_id=class_obj.id,
+        subject_id=subject.id,
+        term_id=term.id
     )
     
     db.session.add(assignment)

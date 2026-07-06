@@ -1,0 +1,35 @@
+{% extends 'public/base.html' %}
+
+{% block title %}Master Dashboard - Turnjoy LMS{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Master Platform Dashboard</h1>
+    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Review all registered schools and expand each one to see students enrolled under that school.</p>
+</div>
+
+{% for item in tenant_data %}
+<div class="section">
+    <div class="card" style="padding: 20px;">
+        <h2>{{ item.school_code }}</h2>
+        <p>{{ item.tenant.name }} &bull; {{ item.tenant.custom_domain or item.tenant.subdomain }}</p>
+        <p><strong>Students:</strong> {{ item.student_count }}</p>
+        <details style="margin-top: 16px;">
+            <summary style="font-weight: 700; cursor: pointer;">View students</summary>
+            <div style="margin-top: 12px; display: grid; gap: 12px;">
+                {% if item.students %}
+                    {% for student in item.students %}
+                    <div class="card" style="padding: 14px; background: #f6fbff;">
+                        <strong>{{ student.name }}</strong><br>
+                        <small>{{ student.email }}</small>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No students registered yet.</p>
+                {% endif %}
+            </div>
+        </details>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

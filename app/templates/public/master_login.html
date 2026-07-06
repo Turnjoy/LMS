@@ -1,0 +1,26 @@
+{% extends 'public/base.html' %}
+
+{% block title %}Master Login - Turnjoy LMS{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Super Admin Login</h1>
+    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">This hidden portal is only for the platform owner to review registered schools and their students.</p>
+</div>
+
+<div class="section" style="max-width: 520px; margin: 0 auto;">
+    <div class="card">
+        <form method="POST" action="{{ url_for('public.master_dashboard') }}">
+            <div class="form-group" style="margin-bottom: 18px;">
+                <label>Email</label>
+                <input type="email" name="email" required style="width:100%; padding: 12px; border:1px solid #d9e2ec; border-radius: 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 18px;">
+                <label>Password</label>
+                <input type="password" name="password" required style="width:100%; padding: 12px; border:1px solid #d9e2ec; border-radius: 10px;">
+            </div>
+            <button class="btn btn-primary" style="width:100%;">Sign In</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

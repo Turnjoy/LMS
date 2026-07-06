@@ -1,0 +1,25 @@
+{% extends 'public/base.html' %}
+
+{% block title %}About - Turnjoy LMS{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>About Turnjoy LMS</h1>
+    <p style="max-width: 760px; margin-top: 18px; line-height: 1.75;">Turnjoy LMS is designed to separate the marketing front-door from every school portal. Each school operates under its own domain with dedicated admin, teacher, and student dashboards.</p>
+</div>
+
+<section class="section grid">
+    <div class="card">
+        <h2>Secure Tenant Routing</h2>
+        <p>School domains are resolved at request time and routed directly to the tenant's portal experiences.</p>
+    </div>
+    <div class="card">
+        <h2>Public Marketing</h2>
+        <p>The landing pages on the root domain remain purely marketing-focused, with no administration leak.</p>
+    </div>
+    <div class="card">
+        <h2>School Section Roles</h2>
+        <p>Primary and Secondary admin permissions are separated, with special dashboards for each section when both are configured.</p>
+    </div>
+</section>
+{% endblock %}
