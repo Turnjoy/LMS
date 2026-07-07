@@ -6,8 +6,24 @@
 <div class="hero">
     <h1>Master Platform Dashboard</h1>
     <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Review every tenant, approve school admins, and inspect aggregate SaaS growth without configuring local school fees.</p>
-    <h2 style="margin-top: 22px;">{{ total_students or 0 }}</h2>
-    <p>Total students registered across all schools</p>
+    <div class="grid" style="margin-top: 22px;">
+        <div>
+            <h2>{{ total_active_schools or 0 }}</h2>
+            <p>Active schools</p>
+        </div>
+        <div>
+            <h2>{{ total_students or 0 }}</h2>
+            <p>Total students registered across all schools</p>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="card" id="school-drilldown">
+        <h2>School Drill-down</h2>
+        <p style="margin-top: 10px;">Select a school below to fetch live student, teacher, and family counts.</p>
+        <div id="drilldown-content" style="margin-top: 16px;"></div>
+    </div>
 </div>
 
 <div class="section">
@@ -37,11 +53,56 @@
         <p>
             <strong>Admins:</strong> {{ item.admin_count }} &bull;
             <strong>Teachers:</strong> {{ item.teacher_count }} &bull;
-            <strong>Students:</strong> {{ item.student_count }}
+            <strong>Students:</strong> {{ item.student_count }} &bull;
+            <strong>Families:</strong> {{ item.family_count }}
+        </p>
+        <p>
+            <strong>Status:</strong> {{ 'Active' if item.tenant.is_active else 'Locked' }} &bull;
+            <strong>Billing:</strong> {{ item.tenant.billing_type }}
         </p>
         <p><strong>Section Configuration:</strong> {{ item.tenant.sections|title }}</p>
-        <a href="{{ url_for('public.master_tenant_detail', tenant_id=item.tenant.id) }}" class="btn btn-secondary" style="margin-top: 12px;">View Tenant Details</a>
+        <form method="POST" action="{{ url_for('public.update_tenant_billing', tenant_id=item.tenant.id) }}" style="display: grid; gap: 12px; max-width: 420px; margin-top: 14px;">
+            <label>
+                School Prefix
+                <input name="school_prefix" value="{{ item.tenant.school_prefix }}" maxlength="12" style="width: 100%; padding: 10px; margin-top: 6px;">
+            </label>
+            <label>
+                <input type="checkbox" name="is_active" {% if item.tenant.is_active %}checked{% endif %}>
+                Unlock School
+            </label>
+            <label>
+                Billing Type
+                <select name="billing_type" style="width: 100%; padding: 10px; margin-top: 6px;">
+                    <option value="school_pay" {% if item.tenant.billing_type == 'school_pay' %}selected{% endif %}>School Pay</option>
+                    <option value="student_pay" {% if item.tenant.billing_type == 'student_pay' %}selected{% endif %}>Student Pay</option>
+                </select>
+            </label>
+            <button type="submit" class="btn btn-primary">Save Controls</button>
+        </form>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+            <button type="button" class="btn btn-primary" data-school-id="{{ item.tenant.id }}" data-school-name="{{ item.tenant.name }}">Fetch Metrics</button>
+            <a href="{{ url_for('public.master_tenant_detail', tenant_id=item.tenant.id) }}" class="btn btn-secondary">View Tenant Details</a>
+        </div>
     </div>
 </div>
 {% endfor %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.querySelectorAll('[data-school-id]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const schoolId = button.dataset.schoolId;
+            const response = await fetch(`{{ url_for('public.master_dashboard') }}/tenant/${schoolId}/metrics`);
+            const data = await response.json();
+            document.querySelector('#drilldown-content').innerHTML = `
+                <h3>${data.school_name}</h3>
+                <p><strong>Total Students:</strong> ${data.total_students}</p>
+                <p><strong>Total Teachers:</strong> ${data.total_teachers}</p>
+                <p><strong>Total Families/Parents:</strong> ${data.total_families}</p>
+                <p><strong>Status:</strong> ${data.is_active ? 'Active' : 'Locked'} | <strong>Billing:</strong> ${data.billing_type}</p>
+            `;
+        });
+    });
+</script>
 {% endblock %}

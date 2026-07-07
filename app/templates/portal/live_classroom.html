@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Live Class - {{ class_obj.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .classroom-shell { display: grid; gap: 16px; }
+    .classroom-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    #jitsi-classroom { min-height: 72vh; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: #111; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="classroom-shell">
+    <div class="classroom-header">
+        <div>
+            <h1>{{ class_obj.name }}</h1>
+            <p style="color: #666;">Live classroom</p>
+        </div>
+        <a href="{{ url_for('auth.student_dashboard' if current_user.role == 'student' else 'results.dashboard') }}" class="btn btn-secondary">Back</a>
+    </div>
+    <div id="jitsi-classroom"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://meet.jit.si/external_api.js"></script>
+<script>
+    const api = new JitsiMeetExternalAPI('meet.jit.si', {
+        roomName: {{ room_name|tojson }},
+        parentNode: document.querySelector('#jitsi-classroom'),
+        userInfo: { displayName: {{ display_name|tojson }} },
+        configOverwrite: {
+            prejoinPageEnabled: false,
+            disableDeepLinking: true
+        },
+        interfaceConfigOverwrite: {
+            SHOW_JITSI_WATERMARK: false
+        }
+    });
+</script>
+{% endblock %}

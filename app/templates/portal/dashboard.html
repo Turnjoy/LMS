@@ -193,6 +193,9 @@
         <div class="module-item">
             <h3>{{ assignment.subject.name if assignment.subject else 'Subject' }}</h3>
             <p>{{ assignment.class_obj.name if assignment.class_obj else 'Class' }}{% if assignment.term %} - {{ assignment.term.name }} {{ assignment.term.session }}{% endif %}</p>
+            {% if assignment.class_obj %}
+            <a href="{{ url_for('auth.live_classroom', class_id=assignment.class_obj.id) }}" class="btn btn-primary" style="margin-top: 10px;">Go to Class</a>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
@@ -206,6 +209,9 @@
         <a href="{{ url_for('auth.student_term_registration') }}" class="btn btn-secondary">Student Registration</a>
         <a href="{{ url_for('results.get_student_results', student_id=current_user.id) }}" class="btn btn-primary">My Results</a>
         <a href="{{ url_for('attendance.get_student_attendance', student_id=current_user.id) }}" class="btn btn-secondary">My Attendance</a>
+        {% if student_enrollments %}
+        <a href="{{ url_for('auth.live_classroom', class_id=student_enrollments[0].class_id) }}" class="btn btn-primary">Go to Class</a>
+        {% endif %}
     </div>
 </div>
 

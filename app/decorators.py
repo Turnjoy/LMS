@@ -1,6 +1,7 @@
 from functools import wraps
-from flask import abort, session
+from flask import abort, g, render_template, session
 from flask_login import current_user
+from app.auth_utils import user_payment_locked
 
 LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
 
@@ -33,6 +34,12 @@ def role_required(*roles):
             
             if not user_has_role(current_user, roles):
                 abort(403)
+
+            if user_payment_locked(current_user, getattr(g, 'current_tenant', None)):
+                return render_template(
+                    'portal/payment_required.html',
+                    payload={'status': 'payment_required', 'message': 'Payment Required'}
+                ), 402
             
             return f(*args, **kwargs)
         return decorated_function

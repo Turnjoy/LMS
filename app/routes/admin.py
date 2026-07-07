@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify, g, render_template, redirect, url_for, flash
+from datetime import datetime
+from flask import Blueprint, request, jsonify, g, render_template, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from app.models import (
     AdmissionApplication,
@@ -27,8 +28,8 @@ from app.models import (
 )
 from app.decorators import role_required
 from app import db
+from app.auth_utils import ensure_custom_id
 from sqlalchemy import or_
-from datetime import datetime
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -711,7 +712,6 @@ def review_admission(application_id, action):
         return redirect(url_for('admin.admissions'))
 
     email = request.form.get('student_email') or application.parent_email
-    password = request.form.get('temporary_password') or 'student123'
     class_id = request.form.get('class_id') or application.requested_class_id
     term_id = request.form.get('term_id')
     amount_due = float(request.form.get('amount_due') or 0)
@@ -729,9 +729,11 @@ def review_admission(application_id, action):
         name=application.applicant_name,
         email=email,
         role='student',
-        is_approved=True
+        is_approved=True,
+        is_first_login=True,
+        payment_status='unpaid'
     )
-    student.set_password(password)
+    ensure_custom_id(student, g.current_tenant, datetime.utcnow())
     db.session.add(student)
     db.session.flush()
 
@@ -904,6 +906,8 @@ def mark_payment_paid(access_id):
     access.payment_reference = request.form.get('payment_reference') or None
     access.is_paid = True
     access.portal_unlocked = True
+    if access.student:
+        access.student.payment_status = 'paid'
     db.session.commit()
 
     flash('Payment confirmed and portal unlocked.', 'success')
@@ -988,10 +992,9 @@ def create_user():
     
     name = data.get('name')
     email = data.get('email')
-    password = data.get('password')
     role = data.get('role')
     
-    if not all([name, email, password, role]):
+    if not all([name, email, role]):
         return jsonify({'error': 'Missing required fields'}), 400
     
     if role not in ['admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent']:
@@ -1010,11 +1013,14 @@ def create_user():
         tenant_id=g.current_tenant_id,
         name=name,
         email=email,
+        phone_number=data.get('phone_number') or data.get('phone'),
         role=role,
         section=data.get('section') or ('primary' if role == 'primary_admin' else ('secondary' if role == 'secondary_admin' else None)),
-        is_approved=True
+        is_approved=True,
+        is_first_login=True,
+        payment_status=data.get('payment_status') or ('unpaid' if role in ['student', 'parent'] else 'paid')
     )
-    user.set_password(password)
+    ensure_custom_id(user, g.current_tenant, datetime.utcnow())
     
     db.session.add(user)
     db.session.flush()
@@ -1033,8 +1039,42 @@ def create_user():
     return jsonify({
         'success': True,
         'message': 'User created successfully',
-        'user_id': user.id
+        'user_id': user.id,
+        'custom_id': user.custom_id,
+        'default_password': user.first_name.lower()
     }), 201
+
+
+@admin_bp.route('/reset-user-password', methods=['POST'])
+@login_required
+@role_required('local_admin')
+def reset_user_password():
+    """Reset a tenant user back into first-login onboarding."""
+    data = request.get_json(silent=True) or request.form
+    target_user_id = data.get('user_id')
+
+    target = User.query.filter_by(
+        id=target_user_id,
+        tenant_id=g.current_tenant_id
+    ).first_or_404()
+
+    if target.role == 'super_admin':
+        abort(403)
+
+    target.password_hash = None
+    target.is_first_login = True
+    db.session.commit()
+
+    response = {
+        'success': True,
+        'message': 'Password reset. User can re-onboard with their lowercase first name.',
+        'custom_id': target.custom_id,
+        'default_password': target.first_name.lower()
+    }
+    if request.is_json:
+        return jsonify(response), 200
+    flash(response['message'], 'success')
+    return redirect(url_for('admin.dashboard'))
 
 
 @admin_bp.route('/classes', methods=['POST'])
@@ -1286,7 +1326,6 @@ def bulk_onboarding():
     for index, row in frame.iterrows():
         name = str(row[columns['name']]).strip()
         email = str(row[columns['email']]).strip().lower()
-        password = str(row[columns.get('password')]).strip() if columns.get('password') else 'changeme123'
         if not name or not email or email == 'nan':
             skipped.append(f'Row {index + 2}: missing name or email')
             continue
@@ -1300,9 +1339,12 @@ def bulk_onboarding():
             name=name,
             email=email,
             role=account_type,
-            is_approved=True
+            phone_number=str(row[columns.get('phone_number')]).strip() if columns.get('phone_number') and not row.isna()[columns['phone_number']] else None,
+            is_approved=True,
+            is_first_login=True,
+            payment_status='unpaid' if account_type == 'student' else 'paid'
         )
-        user.set_password(password)
+        ensure_custom_id(user, g.current_tenant, datetime.utcnow())
         db.session.add(user)
         db.session.flush()
 
@@ -1377,6 +1419,8 @@ def payment_webhook(provider):
             access.payment_reference = reference
             access.is_paid = access.amount_paid >= (access.amount_due or 0)
             access.portal_unlocked = access.is_paid
+            if access.is_paid and access.student:
+                access.student.payment_status = 'paid'
 
     db.session.commit()
     return jsonify({'success': True}), 200

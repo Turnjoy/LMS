@@ -24,10 +24,26 @@ def _ensure_runtime_schema():
         if 'custom_domain' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN custom_domain VARCHAR(255)")
             connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_tenants_custom_domain ON tenants (custom_domain)")
+        if 'school_prefix' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN school_prefix VARCHAR(12) NOT NULL DEFAULT 'SCH'")
+        if 'is_active' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+        if 'billing_type' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN billing_type VARCHAR(20) NOT NULL DEFAULT 'school_pay'")
 
         user_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
         if 'is_approved' not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_approved BOOLEAN NOT NULL DEFAULT 0")
+        if 'custom_id' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN custom_id VARCHAR(40)")
+            connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_custom_id ON users (custom_id)")
+        if 'phone_number' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN phone_number VARCHAR(30)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_users_phone_number ON users (phone_number)")
+        if 'is_first_login' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_first_login BOOLEAN NOT NULL DEFAULT 0")
+        if 'payment_status' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid'")
 
         class_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(classes)").fetchall()]
         if 'section' not in class_columns:
@@ -130,6 +146,8 @@ def create_app(config_name='default'):
                 g.current_tenant_id = tenant.id
                 g.current_tenant = tenant
                 g.current_domain = tenant.custom_domain or host
+                if not tenant.is_active and tenant.billing_type == 'school_pay':
+                    return render_template('portal/school_suspended.html', tenant=tenant), 403
             else:
                 g.current_tenant_id = None
                 g.current_tenant = None

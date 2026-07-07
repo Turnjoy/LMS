@@ -17,6 +17,9 @@
         <p><strong>Admins:</strong> {{ admin_count }}</p>
         <p><strong>Teachers:</strong> {{ teacher_count }}</p>
         <p><strong>Students:</strong> {{ student_count }}</p>
+        <p><strong>Families/Parents:</strong> {{ family_count }}</p>
+        <p><strong>Status:</strong> {{ 'Active' if tenant.is_active else 'Locked' }}</p>
+        <p><strong>Billing Type:</strong> {{ tenant.billing_type }}</p>
     </div>
 </div>
 
@@ -27,6 +30,7 @@
             <div class="card"><strong>Admins</strong><p>{{ admin_count }}</p></div>
             <div class="card"><strong>Teachers</strong><p>{{ teacher_count }}</p></div>
             <div class="card"><strong>Students</strong><p>{{ student_count }}</p></div>
+            <div class="card"><strong>Families</strong><p>{{ family_count }}</p></div>
             <div class="card"><strong>Sections</strong><p>{{ section_config }}</p></div>
             <div class="card"><strong>SSS Tracks</strong><p>{{ sss_tracks | join(', ') }}</p></div>
         </div>

@@ -20,6 +20,9 @@ class Tenant(db.Model):
     secondary_color = db.Column(db.String(7), default='#2ecc71')
     sections = db.Column(db.String(20), default='both')  # primary, secondary, both
     sss_tracks = db.Column(db.String(120), default='Science,Humanities,Commercial')
+    school_prefix = db.Column(db.String(12), nullable=False, default='SCH')
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    billing_type = db.Column(db.String(20), default='school_pay', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
@@ -280,10 +283,14 @@ class User(UserMixin, db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True, index=True)
+    custom_id = db.Column(db.String(40), unique=True, index=True)
     name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(120), nullable=True, index=True)
+    phone_number = db.Column(db.String(30), index=True)
+    password_hash = db.Column(db.String(255), nullable=True)
+    is_first_login = db.Column(db.Boolean, default=True, nullable=False)
     role = db.Column(db.String(20), nullable=False)  # 'super_admin', 'admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent'
+    payment_status = db.Column(db.String(20), default='unpaid', nullable=False)
     section = db.Column(db.String(20), default=None)  # 'primary', 'secondary', or None for global roles
     is_approved = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -306,7 +313,13 @@ class User(UserMixin, db.Model):
     
     def check_password(self, password):
         """Verify the user's password."""
+        if not self.password_hash:
+            return False
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def first_name(self):
+        return (self.name or '').strip().split()[0] if (self.name or '').strip() else ''
     
     def __repr__(self):
         return f'<User {self.name} ({self.role})>'

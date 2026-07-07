@@ -1,6 +1,7 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort
+from datetime import datetime
+from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
-from werkzeug.security import check_password_hash
+from sqlalchemy import or_
 from app.models import (
     AdmissionApplication,
     Class,
@@ -11,25 +12,30 @@ from app.models import (
     StudentTermAccess,
     StudentTermRegistration,
     Subject,
+    TeacherAssignment,
     TenantPublicProfile,
     Term,
     User,
 )
 from app import db
+from app.auth_utils import ensure_custom_id, password_matches, user_payment_locked
+from app.auth_utils import live_room_name
 
 auth_bp = Blueprint('auth', __name__)
 LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
 
 @auth_bp.before_request
 def require_tenant_context():
+    if request.endpoint == 'auth.forgot_id':
+        return
     if not getattr(g, 'current_tenant', None):
         abort(404)
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handle user authentication with multi-tenant data separation."""
+    """Handle custom ID authentication with multi-tenant data separation."""
     if request.method == 'POST':
-        email = request.form.get('email')
+        custom_id = (request.form.get('custom_id') or '').strip().upper()
         password = request.form.get('password')
         
         # Check if tenant context is set
@@ -37,17 +43,39 @@ def login():
             flash('System error: Tenant not found. Please contact administrator.', 'error')
             return render_template('portal/login.html', admin_exists=False)
         
-        # Query user by email AND current tenant ID for multi-tenant isolation
+        if not g.current_tenant.is_active and g.current_tenant.billing_type == 'school_pay':
+            flash('School Account Suspended - Please Contact Management', 'error')
+            return render_template('portal/school_suspended.html', tenant=g.current_tenant), 403
+
         user = User.query.filter_by(
-            email=email,
+            custom_id=custom_id,
             tenant_id=g.current_tenant_id
         ).first()
-        
+
+        if user and user_payment_locked(user, g.current_tenant):
+            return _billing_lockout_response(user)
+
         # Validate credentials securely
-        if user and check_password_hash(user.password_hash, password):
+        if user and password_matches(user, password):
             if user.role in LOCAL_ADMIN_ROLES and not user.is_approved:
                 flash('Your school admin account is pending Turnjoy owner approval.', 'error')
                 return render_template('portal/login.html', admin_exists=_admin_exists())
+
+            if user.is_first_login:
+                session_payload = {'pending_user_id': user.id}
+                from flask import session
+                session['force_password_change'] = session_payload
+                if request.accept_mimetypes.best == 'application/json' or request.is_json:
+                    return jsonify({
+                        'status': 'force_password_change',
+                        'custom_id': user.custom_id,
+                        'message': 'Password change required before dashboard access.'
+                    }), 200
+                return render_template(
+                    'portal/force_password_change.html',
+                    custom_id=user.custom_id,
+                    status='force_password_change'
+                ), 200
 
             login_user(user)
 
@@ -55,23 +83,94 @@ def login():
                 flash('Your portal is locked for this term until payment is confirmed.', 'error')
                 return redirect(url_for('auth.portal_locked'))
             
-            # Role-based redirect after successful login
-            if user.role in LOCAL_ADMIN_ROLES:
-                return redirect(url_for('admin.dashboard'))
-            elif user.role == 'teacher':
-                return redirect(url_for('results.dashboard'))
-            elif user.role == 'student':
-                return redirect(url_for('auth.student_dashboard'))
-            elif user.role == 'attendant':
-                return redirect(url_for('attendance.dashboard'))
-            elif user.role == 'parent':
-                return redirect(url_for('auth.parent_dashboard'))
-            else:
-                return redirect(url_for('auth.login'))
+            return redirect(_role_redirect(user))
         else:
             flash('Invalid credentials', 'error')
     
     return render_template('portal/login.html', admin_exists=_admin_exists())
+
+
+def _billing_lockout_response(user):
+    payload = {
+        'status': 'payment_required',
+        'message': 'Payment Required',
+        'custom_id': user.custom_id,
+    }
+    if request.accept_mimetypes.best == 'application/json' or request.is_json:
+        return jsonify(payload), 402
+    flash('Payment Required', 'error')
+    return render_template('portal/payment_required.html', payload=payload), 402
+
+
+@auth_bp.route('/change-password', methods=['POST'])
+@auth_bp.route('/auth/change-password', methods=['POST'])
+def change_password():
+    """Persist the first secure password and disable first-name login forever."""
+    from flask import session
+
+    pending = session.get('force_password_change') or {}
+    user = User.query.filter_by(
+        id=pending.get('pending_user_id'),
+        tenant_id=g.current_tenant_id
+    ).first()
+    if not user:
+        flash('Password reset session expired. Please sign in again.', 'error')
+        return redirect(url_for('auth.login'))
+
+    password = request.form.get('password') or ''
+    confirm_password = request.form.get('confirm_password') or ''
+    if len(password) < 8 or password != confirm_password:
+        flash('Use a matching password with at least 8 characters.', 'error')
+        return render_template('portal/force_password_change.html', custom_id=user.custom_id), 400
+
+    if password.lower() == user.first_name.lower():
+        flash('Choose a password that is not your first name.', 'error')
+        return render_template('portal/force_password_change.html', custom_id=user.custom_id), 400
+
+    user.set_password(password)
+    user.is_first_login = False
+    db.session.commit()
+    session.pop('force_password_change', None)
+    login_user(user)
+    flash('Password saved. Your account is now secured.', 'success')
+    return redirect(_role_redirect(user))
+
+
+@auth_bp.route('/forgot-id', methods=['GET', 'POST'])
+@auth_bp.route('/auth/forgot-id', methods=['GET', 'POST'])
+def forgot_id():
+    """Recover a plaintext custom ID using tenant and registered contact detail."""
+    if request.method == 'POST':
+        school_id = request.form.get('school_id') or g.current_tenant_id
+        contact = (request.form.get('contact') or '').strip().lower()
+        if not school_id or not contact:
+            flash('School ID and registered contact are required.', 'error')
+            return render_template('portal/forgot_id.html'), 400
+        query = User.query.filter(User.tenant_id == school_id)
+        user = query.filter(
+            or_(
+                db.func.lower(User.email) == contact,
+                db.func.lower(User.phone_number) == contact
+            )
+        ).first()
+        if user:
+            return render_template('portal/forgot_id.html', recovered_custom_id=user.custom_id)
+        flash('No account matched that school and contact detail.', 'error')
+    return render_template('portal/forgot_id.html')
+
+
+def _role_redirect(user):
+    if user.role in LOCAL_ADMIN_ROLES:
+        return url_for('admin.dashboard')
+    if user.role == 'teacher':
+        return url_for('results.dashboard')
+    if user.role == 'student':
+        return url_for('auth.student_dashboard')
+    if user.role == 'attendant':
+        return url_for('attendance.dashboard')
+    if user.role == 'parent':
+        return url_for('auth.parent_dashboard')
+    return url_for('auth.login')
 
 @auth_bp.route('/logout')
 @login_required
@@ -288,7 +387,11 @@ def student_dashboard():
     if _student_portal_is_locked(current_user):
         flash('Your portal is locked for this term until payment is confirmed.', 'error')
         return redirect(url_for('auth.portal_locked'))
-    return render_template('portal/dashboard.html')
+    enrollments = StudentClass.query.filter_by(
+        tenant_id=current_user.tenant_id,
+        student_id=current_user.id
+    ).all()
+    return render_template('portal/dashboard.html', student_enrollments=enrollments)
 
 
 @auth_bp.route('/parent/dashboard')
@@ -300,6 +403,38 @@ def parent_dashboard():
         return redirect(url_for('auth.login'))
 
     return render_template('portal/dashboard.html')
+
+
+@auth_bp.route('/class/<int:class_id>/live')
+@login_required
+def live_classroom(class_id):
+    """Embed a private Jitsi classroom for validated teachers and students."""
+    if current_user.role not in ['teacher', 'student']:
+        abort(403)
+
+    class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first_or_404()
+    if current_user.role == 'teacher':
+        allowed = TeacherAssignment.query.filter_by(
+            tenant_id=g.current_tenant_id,
+            teacher_id=current_user.id,
+            class_id=class_id
+        ).first()
+    else:
+        allowed = StudentClass.query.filter_by(
+            tenant_id=g.current_tenant_id,
+            student_id=current_user.id,
+            class_id=class_id
+        ).first()
+
+    if not allowed:
+        abort(403)
+
+    return render_template(
+        'portal/live_classroom.html',
+        class_obj=class_obj,
+        room_name=live_room_name(g.current_tenant_id, class_id),
+        display_name=current_user.name
+    )
 
 
 @auth_bp.route('/signup', methods=['GET', 'POST'])
@@ -341,10 +476,14 @@ def signup():
         tenant_id=g.current_tenant_id,
         name=name,
         email=email,
+        phone_number=request.form.get('phone') or None,
         role=role,
         section='primary' if role == 'primary_admin' else ('secondary' if role == 'secondary_admin' else None),
-        is_approved=role not in LOCAL_ADMIN_ROLES
+        is_approved=role not in LOCAL_ADMIN_ROLES,
+        is_first_login=False,
+        payment_status='paid' if role not in ['student', 'parent'] else 'unpaid'
     )
+    ensure_custom_id(user, g.current_tenant, datetime.utcnow())
     user.set_password(password)
     
     db.session.add(user)
@@ -361,7 +500,7 @@ def signup():
     db.session.commit()
     
     if role in LOCAL_ADMIN_ROLES:
-        flash('School admin account created. It is pending Turnjoy owner approval before login.', 'success')
+        flash(f'School admin account created. Your ID is {user.custom_id}. It is pending Turnjoy owner approval before login.', 'success')
     else:
-        flash('Account created successfully! Please sign in.', 'success')
+        flash(f'Account created successfully. Your ID is {user.custom_id}. Please sign in.', 'success')
     return redirect(url_for('auth.login'))
