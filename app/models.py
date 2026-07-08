@@ -21,6 +21,7 @@ class Tenant(db.Model):
     sections = db.Column(db.String(20), default='both')  # primary, secondary, both
     sss_tracks = db.Column(db.String(120), default='Science,Humanities,Commercial')
     school_prefix = db.Column(db.String(12), nullable=False, default='SCH')
+    status = db.Column(db.String(20), default='pending', nullable=False, index=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     billing_type = db.Column(db.String(20), default='school_pay', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

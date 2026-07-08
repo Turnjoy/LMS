@@ -1,0 +1,18 @@
+{% extends 'public/base.html' %}
+
+{% block title %}School Portal Locked{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding: 72px 0;">
+    <div class="card" style="max-width: 720px; margin: 0 auto; text-align: center; border-left: 6px solid #d9534f;">
+        <h1 style="margin-bottom: 12px;">School Account Suspended</h1>
+        <p style="font-size: 1.05rem; line-height: 1.7;">
+            Access to this school portal has been temporarily locked. Please contact the school administrator or platform support.
+        </p>
+        {% if tenant %}
+        <p style="margin-top: 10px; color: #666;"><strong>School:</strong> {{ tenant.name }}</p>
+        {% endif %}
+        <a href="{{ url_for('public.index') }}" class="btn btn-primary" style="margin-top: 20px;">Return to Home</a>
+    </div>
+</div>
+{% endblock %}

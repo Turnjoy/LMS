@@ -1,16 +1,54 @@
-from flask import Flask, g, render_template, request
+from flask import Flask, g, render_template, request, session
 from flask_login import LoginManager
 from config import config
 from app.models import db, Tenant
 import os
+from urllib.parse import urlparse
 
 
 def _normalize_host(host):
     """Normalize a request host into a domain string used for tenant lookup."""
-    host = (host or '').split(':')[0].strip().lower()
+    host = (host or '').strip().lower()
+    if not host:
+        return ''
+
+    parsed = urlparse(f"//{host}")
+    host = parsed.netloc or parsed.path or host
+    host = host.rstrip('.')
     if host.startswith('www.'):
         host = host[4:]
+    if host.count(':') == 1:
+        host = host.rsplit(':', 1)[0]
     return host
+
+
+def _school_session_payload(tenant):
+    return {
+        'id': tenant.id,
+        'name': tenant.name,
+        'custom_domain': tenant.custom_domain,
+        'subdomain': tenant.subdomain,
+        'status': tenant.status,
+        'is_active': bool(tenant.is_active),
+        'billing_type': tenant.billing_type,
+    }
+
+
+def _is_school_lockout_required(tenant):
+    """Return True when a matched school is suspended for school-pay billing."""
+    if not tenant:
+        return False
+    if getattr(tenant, 'status', None) in ('pending', 'rejected'):
+        return True
+    return not bool(getattr(tenant, 'is_active', True)) and str(getattr(tenant, 'billing_type', 'school_pay')) == 'school_pay'
+
+
+def _scope_tenant_query(query, tenant_id=None):
+    """Append a tenant/school filter when a school context is active."""
+    current_tenant_id = tenant_id if tenant_id is not None else getattr(g, 'current_tenant_id', None)
+    if current_tenant_id is None:
+        return query
+    return query.filter_by(tenant_id=current_tenant_id)
 
 
 def _ensure_runtime_schema():
@@ -26,6 +64,9 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_tenants_custom_domain ON tenants (custom_domain)")
         if 'school_prefix' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN school_prefix VARCHAR(12) NOT NULL DEFAULT 'SCH'")
+        if 'status' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'approved'")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_tenants_status ON tenants (status)")
         if 'is_active' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
         if 'billing_type' not in tenant_columns:
@@ -114,16 +155,12 @@ def create_app(config_name='default'):
     # Global before_request middleware for multi-tenant isolation
     @app.before_request
     def set_tenant_context():
-        """
-        Resolve the browser domain to fetch the active school
-        from the Tenant table and store its ID in g.current_tenant_id.
-        """
-        # Skip for static files and favicon
+        """Resolve the browser host to a tenant context and enforce school lockouts."""
         if request.path.startswith('/static') or request.path in ['/favicon.ico', '/healthz']:
             return
-        
+
         try:
-            host = _normalize_host(request.host)
+            host = _normalize_host(request.headers.get('Host') or request.host)
             tenant = None
 
             if host not in ['localhost', '127.0.0.1', '0.0.0.0']:
@@ -145,17 +182,43 @@ def create_app(config_name='default'):
             if tenant:
                 g.current_tenant_id = tenant.id
                 g.current_tenant = tenant
+                g.current_school = tenant
                 g.current_domain = tenant.custom_domain or host
-                if not tenant.is_active and tenant.billing_type == 'school_pay':
-                    return render_template('portal/school_suspended.html', tenant=tenant), 403
+                session['current_tenant'] = _school_session_payload(tenant)
+
+                from flask_login import current_user, logout_user
+                if (
+                    current_user.is_authenticated
+                    and current_user.role != 'super_admin'
+                    and getattr(current_user, 'tenant_id', None) != tenant.id
+                ):
+                    logout_user()
+                    return render_template('public/lockout.html', tenant=tenant), 403
+
+                if _is_school_lockout_required(tenant):
+                    return render_template('public/lockout.html', tenant=tenant), 403
+
+                if request.path == '/':
+                    from app.models import User
+                    local_admin_roles = ('admin', 'primary_admin', 'secondary_admin')
+                    admin_exists = User.query.filter(
+                        User.tenant_id == tenant.id,
+                        User.role.in_(local_admin_roles)
+                    ).first() is not None
+                    return render_template('portal/login.html', admin_exists=admin_exists, tenant=tenant)
             else:
                 g.current_tenant_id = None
                 g.current_tenant = None
+                g.current_school = None
                 g.current_domain = host
-        except Exception as e:
-            # If database is not ready, set tenant to None
+                session.pop('current_tenant', None)
+
+                if request.path == '/':
+                    return render_template('public/index.html')
+        except Exception:
             g.current_tenant_id = None
             g.current_tenant = None
+            g.current_school = None
             g.current_domain = _normalize_host(request.host)
     
     # Context processor to make tenant data available in templates
@@ -165,12 +228,14 @@ def create_app(config_name='default'):
         if hasattr(g, 'current_tenant') and g.current_tenant:
             return dict(
                 tenant=g.current_tenant,
+                school=g.current_tenant,
                 tenant_domain=g.current_tenant.custom_domain or getattr(g, 'current_domain', None),
                 primary_color=g.current_tenant.primary_color,
                 secondary_color=g.current_tenant.secondary_color
             )
         return dict(
             tenant=None,
+            school=None,
             tenant_domain=getattr(g, 'current_domain', None),
             primary_color='#3498db',
             secondary_color='#2ecc71'
