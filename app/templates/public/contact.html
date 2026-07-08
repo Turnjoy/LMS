@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hero">
     <h1>Contact Turnjoy LMS</h1>
-    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Get in touch to configure your custom school domain, local admin areas, and global owner access.</p>
+    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Get in touch to configure school onboarding, custom domains, and Super Admin access from the marketing website.</p>
 </div>
 
 <section class="section grid">
@@ -15,8 +15,9 @@
         <p>Phone: +234 800 000 0000</p>
     </div>
     <div class="card">
-        <h2>Demo</h2>
-        <p>Visit your school domain and append <strong>/admin</strong> to reach the local admin login page.</p>
+        <h2>Admin Portal</h2>
+        <p>Use the Admin link on this website to open the Super Admin dashboard for managing schools.</p>
+        <a class="btn btn-primary" href="{{ url_for('public.master_dashboard') }}">Open Admin Portal</a>
     </div>
 </section>
 {% endblock %}

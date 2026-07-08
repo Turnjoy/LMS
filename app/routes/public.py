@@ -214,7 +214,7 @@ def contact():
 @public_bp.route('/admin')
 def school_admin_redirect():
     if not getattr(g, 'current_tenant', None):
-        abort(404)
+        return redirect(url_for('public.master_dashboard'))
     return redirect(url_for('auth.login'))
 
 
