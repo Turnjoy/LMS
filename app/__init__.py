@@ -67,6 +67,17 @@ def _ensure_runtime_schema():
         if 'status' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'approved'")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_tenants_status ON tenants (status)")
+        if 'application_website' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN application_website VARCHAR(255)")
+        if 'application_contact_name' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN application_contact_name VARCHAR(120)")
+        if 'application_contact_email' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN application_contact_email VARCHAR(120)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_tenants_application_contact_email ON tenants (application_contact_email)")
+        if 'application_contact_phone' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN application_contact_phone VARCHAR(30)")
+        if 'application_note' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN application_note TEXT")
         if 'is_active' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
         if 'billing_type' not in tenant_columns:

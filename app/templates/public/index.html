@@ -5,12 +5,23 @@
 {% block content %}
 <div class="hero">
     <h1>Super Admin control for every school on Turnjoy LMS.</h1>
-    <p style="max-width: 680px; margin-top: 18px; line-height: 1.7;">The marketing website includes the platform owner dashboard for reviewing schools, approving onboarding, and managing tenant access from one place.</p>
+    <p style="max-width: 680px; margin-top: 18px; line-height: 1.7;">Schools apply from this marketing website by submitting their website and contact details. LMS access opens only after the Super Admin accepts the request.</p>
     <div style="margin-top: 28px; display: flex; gap: 14px; flex-wrap: wrap;">
-        <a class="btn btn-primary" href="{{ url_for('public.master_dashboard') }}">Open Admin Portal</a>
+        <a class="btn btn-primary" href="{{ url_for('public.apply_school') }}">Apply for LMS Access</a>
+        <a class="btn btn-secondary" href="{{ url_for('public.master_dashboard') }}">Open Admin Portal</a>
         <a class="btn btn-secondary" href="{{ url_for('public.pricing') }}">View Pricing</a>
     </div>
 </div>
+
+<section class="section">
+    <div class="card" style="display: grid; gap: 14px;">
+        <h2>School LMS Application</h2>
+        <p style="max-width: 760px; line-height: 1.7;">Submit your school website and contact details for review. Your LMS portal stays pending until the Super Admin accepts your request.</p>
+        <div>
+            <a class="btn btn-primary" href="{{ url_for('public.apply_school') }}">Apply for LMS Access</a>
+        </div>
+    </div>
+</section>
 
 <section class="section grid">
     <div class="card">
@@ -18,8 +29,8 @@
         <p>Root domain serves only public marketing content. No generic admin dashboard is exposed here.</p>
     </div>
     <div class="card">
-        <h2>School Management</h2>
-        <p>The Admin link on this marketing site opens the Super Admin dashboard for managing each school.</p>
+        <h2>School Applications</h2>
+        <p>Schools submit their website and contact details here, then wait for Super Admin approval before using the LMS.</p>
     </div>
     <div class="card">
         <h2>Flexible Curriculum</h2>

@@ -19,5 +19,10 @@
         <p>Use the Admin link on this website to open the Super Admin dashboard for managing schools.</p>
         <a class="btn btn-primary" href="{{ url_for('public.master_dashboard') }}">Open Admin Portal</a>
     </div>
+    <div class="card">
+        <h2>School Application</h2>
+        <p>Schools can submit their website and contact details for LMS access review.</p>
+        <a class="btn btn-primary" href="{{ url_for('public.apply_school') }}">Apply for LMS Access</a>
+    </div>
 </section>
 {% endblock %}

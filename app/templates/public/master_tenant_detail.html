@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hero">
     <h1>{{ tenant.name }}</h1>
-    <p>{{ tenant.custom_domain or tenant.subdomain }}</p>
+    <p>{{ tenant.application_website or tenant.custom_domain or tenant.subdomain }}</p>
 </div>
 
 <div class="section">
@@ -18,8 +18,14 @@
         <p><strong>Teachers:</strong> {{ teacher_count }}</p>
         <p><strong>Students:</strong> {{ student_count }}</p>
         <p><strong>Families/Parents:</strong> {{ family_count }}</p>
-        <p><strong>Status:</strong> {{ 'Active' if tenant.is_active else 'Locked' }}</p>
+        <p><strong>Status:</strong> {{ 'Active' if tenant.status == 'approved' else tenant.status|title }}</p>
         <p><strong>Billing Type:</strong> {{ tenant.billing_type }}</p>
+        {% if tenant.application_contact_name or tenant.application_contact_email or tenant.application_contact_phone %}
+        <p><strong>Application Contact:</strong> {{ tenant.application_contact_name or 'Not provided' }}{% if tenant.application_contact_email %} &bull; {{ tenant.application_contact_email }}{% endif %}{% if tenant.application_contact_phone %} &bull; {{ tenant.application_contact_phone }}{% endif %}</p>
+        {% endif %}
+        {% if tenant.application_note %}
+        <p><strong>Application Note:</strong> {{ tenant.application_note }}</p>
+        {% endif %}
     </div>
 </div>
 

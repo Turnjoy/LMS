@@ -1,7 +1,10 @@
 import hmac
+import re
+from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, render_template, request, redirect, url_for, flash, abort, g, jsonify, session
 from flask_login import current_user, login_required, login_user
+from sqlalchemy import or_
 from werkzeug.security import check_password_hash
 from app.models import (
     AdmissionApplication,
@@ -87,6 +90,38 @@ def _school_payload(tenant):
     }
 
 
+def _slugify_school(value):
+    slug = re.sub(r'[^a-z0-9]+', '-', (value or '').strip().lower()).strip('-')
+    return (slug or 'school')[:50]
+
+
+def _school_prefix(value):
+    letters = re.sub(r'[^A-Za-z0-9]', '', value or '').upper()
+    return (letters[:6] or 'SCH')[:12]
+
+
+def _normalize_application_website(value):
+    raw_value = (value or '').strip().lower()
+    if not raw_value:
+        return ''
+    parsed = urlparse(raw_value if '://' in raw_value else f'https://{raw_value}')
+    host = (parsed.netloc or parsed.path or '').split('/')[0].strip().rstrip('.')
+    if host.startswith('www.'):
+        host = host[4:]
+    return host
+
+
+def _unique_application_subdomain(seed):
+    base = _slugify_school(seed)
+    candidate = base
+    suffix = 2
+    while Tenant.query.filter_by(subdomain=candidate).first():
+        trimmed_base = base[: max(1, 50 - len(str(suffix)) - 1)]
+        candidate = f'{trimmed_base}-{suffix}'
+        suffix += 1
+    return candidate
+
+
 def _ensure_school_initialization(tenant):
     if not TenantAISetting.query.filter_by(tenant_id=tenant.id).first():
         db.session.add(TenantAISetting(tenant_id=tenant.id))
@@ -147,6 +182,7 @@ def _master_dashboard_context():
     total_students = User.query.filter_by(role='student').count()
     total_schools = Tenant.query.count()
     total_active_schools = Tenant.query.filter_by(is_active=True).count()
+    total_pending_schools = Tenant.query.filter_by(status='pending').count()
     pending_admins = User.query.filter(
         User.role.in_(['admin', 'primary_admin', 'secondary_admin']),
         User.is_approved.is_(False)
@@ -174,6 +210,7 @@ def _master_dashboard_context():
         'total_schools': total_schools,
         'total_students': total_students,
         'total_active_schools': total_active_schools,
+        'total_pending_schools': total_pending_schools,
         'pending_admins': pending_admins,
     }
 
@@ -202,6 +239,56 @@ def pricing():
     if getattr(g, 'current_tenant', None):
         abort(404)
     return render_template('public/pricing.html')
+
+
+@public_bp.route('/apply', methods=['GET', 'POST'])
+def apply_school():
+    if getattr(g, 'current_tenant', None):
+        abort(404)
+
+    if request.method == 'POST':
+        school_name = (request.form.get('school_name') or '').strip()
+        website = _normalize_application_website(request.form.get('website'))
+        contact_name = (request.form.get('contact_name') or '').strip()
+        contact_email = (request.form.get('contact_email') or '').strip().lower()
+        contact_phone = (request.form.get('contact_phone') or '').strip()
+        note = (request.form.get('note') or '').strip()
+
+        if not all([school_name, website, contact_name, contact_email, contact_phone]):
+            flash('Please complete the school name, website, contact person, email, and phone.', 'error')
+            return render_template('public/apply.html'), 400
+
+        existing = Tenant.query.filter(
+            or_(
+                Tenant.custom_domain == website,
+                Tenant.application_website == website,
+                Tenant.application_contact_email == contact_email,
+            )
+        ).first()
+        if existing:
+            status_label = 'Active' if _school_status(existing) == 'approved' else _school_status(existing).title()
+            flash(f'This school request is already on file. Current status: {status_label}.', 'info')
+            return render_template('public/apply.html', submitted_school=existing), 200
+
+        tenant = Tenant(
+            name=school_name,
+            subdomain=_unique_application_subdomain(school_name),
+            custom_domain=website,
+            school_prefix=_school_prefix(school_name),
+            status='pending',
+            is_active=False,
+            application_website=website,
+            application_contact_name=contact_name,
+            application_contact_email=contact_email,
+            application_contact_phone=contact_phone,
+            application_note=note or None,
+        )
+        db.session.add(tenant)
+        db.session.commit()
+        flash('Application submitted. Admin needs to accept your request first before LMS access is opened.', 'success')
+        return render_template('public/apply.html', submitted_school=tenant), 201
+
+    return render_template('public/apply.html')
 
 
 @public_bp.route('/contact')

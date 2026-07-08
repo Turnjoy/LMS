@@ -20,3 +20,8 @@ def test_inactive_school_pay_is_lockout_required():
 def test_active_student_pay_is_not_lockout_required():
     tenant = Tenant(name='Bright Academy', subdomain='bright', custom_domain='portal.brightacademy.edu', is_active=True, billing_type='student_pay')
     assert _is_school_lockout_required(tenant) is False
+
+
+def test_pending_school_is_lockout_required_before_admin_accepts():
+    tenant = Tenant(name='Bright Academy', subdomain='bright', custom_domain='portal.brightacademy.edu', status='pending', is_active=False, billing_type='school_pay')
+    assert _is_school_lockout_required(tenant) is True

@@ -108,6 +108,10 @@
             <p>Active schools</p>
         </div>
         <div class="metric">
+            <h2>{{ total_pending_schools or 0 }}</h2>
+            <p>Pending requests</p>
+        </div>
+        <div class="metric">
             <h2>{{ total_students or 0 }}</h2>
             <p>Total students</p>
         </div>
@@ -149,6 +153,7 @@
                     <tr>
                         <th>School</th>
                         <th>Domain</th>
+                        <th>Application Contact</th>
                         <th>Users</th>
                         <th>Status</th>
                         <th>Billing</th>
@@ -162,7 +167,15 @@
                             <strong>{{ item.tenant.name }}</strong><br>
                             <span>{{ item.school_code }}</span>
                         </td>
-                        <td>{{ item.tenant.custom_domain or item.tenant.subdomain }}</td>
+                        <td>{{ item.tenant.application_website or item.tenant.custom_domain or item.tenant.subdomain }}</td>
+                        <td>
+                            {{ item.tenant.application_contact_name or 'Not provided' }}<br>
+                            {{ item.tenant.application_contact_email or '' }}<br>
+                            {{ item.tenant.application_contact_phone or '' }}
+                            {% if item.tenant.application_note %}
+                            <br><span>{{ item.tenant.application_note }}</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {{ item.admin_count }} admins<br>
                             {{ item.teacher_count }} teachers<br>
