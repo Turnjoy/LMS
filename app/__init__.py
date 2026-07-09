@@ -230,13 +230,22 @@ def create_app(config_name='default'):
     @app.before_request
     def set_tenant_context():
         """Resolve the browser host to a tenant context and enforce school lockouts."""
-        # Skip tenant lookup for master admin routes, static files, and health checks
-        if request.path.startswith('/_master_hq_2026') or request.path.startswith('/static') or request.path in ['/favicon.ico', '/healthz']:
+        # Skip tenant lookup for master admin routes, static files, health checks, and marketing/public pages
+        public_routes = ['/', '/about', '/pricing', '/contact', '/apply', '/login', '/signup', '/landing']
+        if (request.path.startswith('/_master_hq_2026') or 
+            request.path.startswith('/static') or 
+            request.path in ['/favicon.ico', '/healthz'] or
+            request.path in public_routes):
             return
 
         try:
             host = _normalize_host(request.headers.get('Host') or request.host)
             tenant = None
+
+            # Skip tenant lookup for known marketing/root domains
+            marketing_domains = ['turnjoy.com', 'www.turnjoy.com', 'turnjoy-lms.onrender.com', 'turnjoy-lms.up.railway.app']
+            if host in marketing_domains or any(host.endswith(f'.{domain}') for domain in marketing_domains):
+                return
 
             if host not in ['localhost', '127.0.0.1', '0.0.0.0']:
                 tenant = Tenant.query.filter_by(custom_domain=host).first()
