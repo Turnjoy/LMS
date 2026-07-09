@@ -1,8 +1,7 @@
-from flask import Flask, g, render_template, request, session
+from flask import Flask, g, redirect, render_template, request, session, url_for
 from flask_login import LoginManager
 from config import config
 from app.models import db, Tenant
-import os
 from urllib.parse import urlparse
 
 
@@ -43,6 +42,18 @@ def _is_school_lockout_required(tenant):
     return not bool(getattr(tenant, 'is_active', True)) and str(getattr(tenant, 'billing_type', 'school_pay')) == 'school_pay'
 
 
+def _subdomain_from_host(host):
+    """Return a tenant subdomain candidate for multi-label hosts."""
+    if not host or host in ['localhost', '127.0.0.1', '0.0.0.0']:
+        return None
+    if host.endswith('.localhost'):
+        return host.split('.')[0]
+    parts = host.split('.')
+    if len(parts) >= 3:
+        return parts[0]
+    return None
+
+
 def _scope_tenant_query(query, tenant_id=None):
     """Append a tenant/school filter when a school context is active."""
     current_tenant_id = tenant_id if tenant_id is not None else getattr(g, 'current_tenant_id', None)
@@ -58,6 +69,32 @@ def _ensure_runtime_schema():
         return
 
     with engine.connect() as connection:
+        connection.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS class_levels (
+                id INTEGER PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+                name VARCHAR(50) NOT NULL,
+                category VARCHAR(20) NOT NULL,
+                sort_order INTEGER DEFAULT 0,
+                created_at DATETIME,
+                CONSTRAINT unique_tenant_class_level UNIQUE (tenant_id, name)
+            )
+        """)
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_class_levels_tenant_id ON class_levels (tenant_id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_class_levels_category ON class_levels (category)")
+        connection.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS class_arms (
+                id INTEGER PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+                class_level_id INTEGER NOT NULL REFERENCES class_levels(id),
+                name VARCHAR(40) NOT NULL,
+                created_at DATETIME,
+                CONSTRAINT unique_tenant_class_arm UNIQUE (tenant_id, class_level_id, name)
+            )
+        """)
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_class_arms_tenant_id ON class_arms (tenant_id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_class_arms_class_level_id ON class_arms (class_level_id)")
+
         tenant_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(tenants)").fetchall()]
         if 'custom_domain' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN custom_domain VARCHAR(255)")
@@ -82,6 +119,8 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
         if 'billing_type' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN billing_type VARCHAR(20) NOT NULL DEFAULT 'school_pay'")
+        if 'setup_completed' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN setup_completed BOOLEAN NOT NULL DEFAULT 0")
         if 'sections' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN sections VARCHAR(20)")
         if 'sss_tracks' not in tenant_columns:
@@ -95,6 +134,9 @@ def _ensure_runtime_schema():
         if 'custom_id' not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN custom_id VARCHAR(40)")
             connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_custom_id ON users (custom_id)")
+        if 'school_generated_id' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN school_generated_id VARCHAR(40)")
+            connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_school_generated_id ON users (school_generated_id)")
         if 'phone_number' not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN phone_number VARCHAR(30)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_users_phone_number ON users (phone_number)")
@@ -108,10 +150,16 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
 
         class_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(classes)").fetchall()]
+        if 'class_level_id' not in class_columns:
+            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN class_level_id INTEGER REFERENCES class_levels(id)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_classes_class_level_id ON classes (class_level_id)")
+        if 'class_arm_id' not in class_columns:
+            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN class_arm_id INTEGER REFERENCES class_arms(id)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_classes_class_arm_id ON classes (class_arm_id)")
         if 'section' not in class_columns:
             connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN section VARCHAR(20)")
         if 'arm' not in class_columns:
-            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN arm VARCHAR(1)")
+            connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN arm VARCHAR(40)")
         if 'track' not in class_columns:
             connection.exec_driver_sql("ALTER TABLE classes ADD COLUMN track VARCHAR(30)")
 
@@ -119,6 +167,11 @@ def _ensure_runtime_schema():
         if submission_columns and 'client_sync_id' not in submission_columns:
             connection.exec_driver_sql("ALTER TABLE assignment_submissions ADD COLUMN client_sync_id VARCHAR(120)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_assignment_submissions_client_sync_id ON assignment_submissions (client_sync_id)")
+
+        subject_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(subjects)").fetchall()]
+        if 'class_level_id' not in subject_columns:
+            connection.exec_driver_sql("ALTER TABLE subjects ADD COLUMN class_level_id INTEGER REFERENCES class_levels(id)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_subjects_class_level_id ON subjects (class_level_id)")
 
         connection.commit()
 
@@ -188,18 +241,9 @@ def create_app(config_name='default'):
             if host not in ['localhost', '127.0.0.1', '0.0.0.0']:
                 tenant = Tenant.query.filter_by(custom_domain=host).first()
 
-                if not tenant and host.endswith('.localhost'):
-                    tenant = Tenant.query.filter_by(subdomain=host.split('.')[0]).first()
-
-                if not tenant and '.' in host and not host.endswith('.onrender.com'):
-                    tenant = Tenant.query.filter_by(subdomain=host.split('.')[0]).first()
-
-            env_domain = os.environ.get('TENANT_DOMAIN')
-            env_subdomain = os.environ.get('TENANT_SUBDOMAIN')
-            if not tenant and env_domain:
-                tenant = Tenant.query.filter_by(custom_domain=_normalize_host(env_domain)).first()
-            if not tenant and env_subdomain:
-                tenant = Tenant.query.filter_by(subdomain=env_subdomain).first()
+                subdomain = _subdomain_from_host(host)
+                if not tenant and subdomain:
+                    tenant = Tenant.query.filter_by(subdomain=subdomain).first()
 
             if tenant:
                 g.current_tenant_id = tenant.id
@@ -220,9 +264,19 @@ def create_app(config_name='default'):
                 if _is_school_lockout_required(tenant):
                     return render_template('public/lockout.html', tenant=tenant), 403
 
+                if (
+                    current_user.is_authenticated
+                    and current_user.role in ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
+                    and tenant.status == 'approved'
+                    and not bool(getattr(tenant, 'setup_completed', False))
+                    and request.endpoint not in ('auth.logout', 'auth.change_password', 'auth.setup_wizard_redirect')
+                    and not request.path.startswith('/admin/setup-wizard')
+                ):
+                    return redirect(url_for('auth.setup_wizard_redirect'))
+
                 if request.path == '/':
                     from app.models import User
-                    local_admin_roles = ('admin', 'primary_admin', 'secondary_admin')
+                    local_admin_roles = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
                     admin_exists = User.query.filter(
                         User.tenant_id == tenant.id,
                         User.role.in_(local_admin_roles)

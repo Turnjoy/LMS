@@ -132,8 +132,8 @@
 
             <form method="POST" action="{{ url_for('auth.login') }}" class="auth-form">
                 <div class="form-group">
-                    <label for="login_custom_id">School ID</label>
-                    <input id="login_custom_id" name="custom_id" placeholder="TJ/STF/2026/001" required autocomplete="username">
+                    <label for="login_email">Email Address</label>
+                    <input id="login_email" name="email" type="text" placeholder="name@school.edu" required autocomplete="username">
                 </div>
 
                 <div class="form-group">
@@ -143,7 +143,7 @@
 
                 <div class="auth-actions">
                     <button type="submit" class="btn btn-primary">Sign In</button>
-                    <a href="{{ url_for('auth.forgot_id') }}" class="btn btn-secondary">Forgot ID</a>
+                    <a href="{{ url_for('auth.forgot_id') }}" class="btn btn-secondary">Forgot School ID</a>
                 </div>
             </form>
         </section>

@@ -1,105 +1,53 @@
 {% extends "base.html" %}
 
-{% block title %}Guided Setup - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+{% block title %}Setup Wizard - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
 
 {% block content %}
 <div class="card">
-    <h1>Guided School Setup</h1>
-    <p style="color: #666; margin-top: 8px;">Choose the school structure. Automatic creates classes for you. Hybrid creates them but still lets you edit later.</p>
+    <h1>School Setup Wizard</h1>
+    <p style="color: #666; margin-top: 8px;">Complete the first tenant setup. This creates base class levels, arms, subjects, optional users, and unlocks the school portal.</p>
 </div>
 
 <form method="POST" action="{{ url_for('admin.setup_wizard') }}" class="card">
+    <h2>1. School Type</h2>
     <div class="form-group">
-        <label for="setup_mode">Setup Mode</label>
-        <select id="setup_mode" name="setup_mode">
-            <option value="hybrid">Hybrid - generate then edit</option>
-            <option value="automatic">Automatic - generate everything selected</option>
+        <label for="school_type">Choose the categories this school runs</label>
+        <select id="school_type" name="school_type" required>
+            <option value="both">Primary and Secondary</option>
+            <option value="primary">Primary Only</option>
+            <option value="secondary">Secondary Only</option>
         </select>
     </div>
 
+    <h2>2. Class Arms & Streams</h2>
     <div class="form-group">
-        <label for="school_type">School Type</label>
-        <select id="school_type" name="school_type">
-            <option value="combined">Combined School</option>
-            <option value="primary">Primary School</option>
-            <option value="secondary">Secondary School</option>
-        </select>
+        <label for="arms">Arms or stream names</label>
+        <input id="arms" name="arms" value="A,B,C" placeholder="A,B,C or Gold,Diamond">
+        <p style="color: #666;">Examples: A,B,C creates Primary 1A and JSS 1B. Gold,Diamond creates Primary 1 Gold and Primary 1 Diamond.</p>
+    </div>
+
+    <h2>3. Subject Registration</h2>
+    <div class="form-group">
+        <label for="subjects">Subjects taught at each generated base class level</label>
+        <textarea id="subjects" name="subjects" rows="8" placeholder="Mathematics&#10;English Language&#10;Civic Education">Mathematics
+English Language
+Civic Education</textarea>
+    </div>
+
+    <h2>4. User Import & ID Generation</h2>
+    <div class="form-group">
+        <label for="teachers">Teachers to invite</label>
+        <textarea id="teachers" name="teachers" rows="5" placeholder="Teacher Name, teacher@email.com"></textarea>
+        <p style="color: #666;">One teacher per line. They sign in with email and temporary password only.</p>
     </div>
 
     <div class="form-group">
-        <label>Sections To Create</label>
-        <label><input type="checkbox" name="sections" value="playgroup"> Playgroup</label><br>
-        <label><input type="checkbox" name="sections" value="kg"> KG 1-3</label><br>
-        <label><input type="checkbox" name="sections" value="nursery"> Nursery 1-3</label><br>
-        <label><input type="checkbox" name="sections" value="primary"> Primary 1-6</label><br>
-        <label><input type="checkbox" name="sections" value="jss"> JSS 1-3</label><br>
-        <label><input type="checkbox" name="sections" value="sss"> SSS 1-3</label>
+        <label for="students">Students to invite</label>
+        <textarea id="students" name="students" rows="6" placeholder="Student Name, student@email.com, Primary 1A"></textarea>
+        <p style="color: #666;">One student per line. The final value should match the generated class stream name.</p>
     </div>
 
-    <div class="form-group">
-        <label for="arms">Class Arms/Subdivisions</label>
-        <input id="arms" name="arms" value="A,B,C" placeholder="A,B,C,D">
-        <p style="color: #666;">Use A-Z style arms. Example: A,B,C creates KG 1A, KG 1B, KG 1C.</p>
-    </div>
-
-    <div class="form-group">
-        <label>Primary & JSS Core Subjects</label>
-        <p style="color: #666; margin-bottom: 8px;">These are assigned automatically to Primary and JSS classes.</p>
-        {% for subject in primary_jss_core_subjects %}
-        <label><input type="checkbox" checked disabled> {{ subject }}</label><br>
-        {% endfor %}
-    </div>
-
-    <div class="form-group">
-        <label>Primary & JSS Extra Modular Options</label>
-        <p style="color: #666; margin-bottom: 8px;">Selected extras are added to every generated Primary and JSS class. You can fine-tune per class on the Class Subjects page.</p>
-        {% for subject in primary_jss_extra_options %}
-        <label><input type="checkbox" name="primary_jss_extras" value="{{ subject }}"> {{ subject }}</label><br>
-        {% endfor %}
-    </div>
-
-    <div class="form-group">
-        <label>SSS Departments</label>
-        <label><input type="checkbox" name="sss_tracks" value="Science" checked> Science</label><br>
-        <label><input type="checkbox" name="sss_tracks" value="Humanities" checked> Humanities</label><br>
-        <label><input type="checkbox" name="sss_tracks" value="Commercial" checked> Commercial</label>
-    </div>
-
-    <div class="form-group">
-        <label>SSS Mandatory Core</label>
-        <p style="color: #666; margin-bottom: 8px;">All SSS classes receive Mathematics, English Language, and Civic Education. Science classes receive Biology; Commercial and Humanities classes receive Economics.</p>
-        {% for subject in sss_core_subjects %}
-        <label><input type="checkbox" checked disabled> {{ subject }}</label><br>
-        {% endfor %}
-    </div>
-
-    <div class="form-group">
-        <label>SSS Track Blocks</label>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 10px;">
-            {% for track, subjects in sss_track_subjects.items() %}
-            <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
-                <strong>{{ track }}</strong>
-                <ul style="margin: 8px 0 0 18px;">
-                    {% for subject in subjects %}
-                    <li>{{ subject }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="form-group">
-        <label>SSS Extra Electives</label>
-        <p style="color: #666; margin-bottom: 8px;">Selected electives are added to every generated SSS class. Use Class Subjects afterward to assign them to specific classrooms only.</p>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;">
-            {% for subject in sss_extra_electives %}
-            <label><input type="checkbox" name="sss_extra_electives" value="{{ subject }}"> {{ subject }}</label>
-            {% endfor %}
-        </div>
-    </div>
-
-    <button type="submit" class="btn btn-primary">Generate Classes & Subject Matrix</button>
-    <a href="{{ url_for('admin.setup_school') }}" class="btn btn-secondary">Back To Setup</a>
+    <button type="submit" class="btn btn-primary">Finish Setup</button>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">Dashboard</a>
 </form>
 {% endblock %}

@@ -22,7 +22,7 @@ from app.auth_utils import ensure_custom_id, password_matches, user_payment_lock
 from app.auth_utils import live_room_name
 
 auth_bp = Blueprint('auth', __name__)
-LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
+LOCAL_ADMIN_ROLES = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
 
 @auth_bp.before_request
 def require_tenant_context():
@@ -33,9 +33,9 @@ def require_tenant_context():
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handle custom ID authentication with multi-tenant data separation."""
+    """Handle tenant-scoped email authentication with admin ID compatibility."""
     if request.method == 'POST':
-        custom_id = (request.form.get('custom_id') or '').strip().upper()
+        identifier = (request.form.get('email') or request.form.get('custom_id') or '').strip()
         password = request.form.get('password')
         
         # Check if tenant context is set
@@ -47,10 +47,17 @@ def login():
             flash('School Account Suspended - Please Contact Management', 'error')
             return render_template('portal/school_suspended.html', tenant=g.current_tenant), 403
 
-        user = User.query.filter_by(
-            custom_id=custom_id,
-            tenant_id=g.current_tenant_id
+        user = User.query.filter(
+            User.tenant_id == g.current_tenant_id,
+            or_(
+                db.func.lower(User.email) == identifier.lower(),
+                User.school_generated_id == identifier.upper(),
+                User.custom_id == identifier.upper(),
+            )
         ).first()
+
+        if user and user.role not in LOCAL_ADMIN_ROLES and (identifier.upper() in {user.custom_id, user.school_generated_id}):
+            user = None
 
         if user and user_payment_locked(user, g.current_tenant):
             return _billing_lockout_response(user)
@@ -68,12 +75,12 @@ def login():
                 if request.accept_mimetypes.best == 'application/json' or request.is_json:
                     return jsonify({
                         'status': 'force_password_change',
-                        'custom_id': user.custom_id,
+                        'custom_id': user.school_generated_id or user.custom_id,
                         'message': 'Password change required before dashboard access.'
                     }), 200
                 return render_template(
                     'portal/force_password_change.html',
-                    custom_id=user.custom_id,
+                    custom_id=user.school_generated_id or user.custom_id,
                     status='force_password_change'
                 ), 200
 
@@ -134,6 +141,14 @@ def change_password():
     login_user(user)
     flash('Password saved. Your account is now secured.', 'success')
     return redirect(_role_redirect(user))
+
+
+@auth_bp.route('/setup-wizard')
+@login_required
+def setup_wizard_redirect():
+    if current_user.role not in LOCAL_ADMIN_ROLES:
+        abort(403)
+    return redirect(url_for('admin.setup_wizard'))
 
 
 @auth_bp.route('/forgot-id', methods=['GET', 'POST'])

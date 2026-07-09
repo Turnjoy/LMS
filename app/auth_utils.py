@@ -1,11 +1,14 @@
 from hashlib import sha256
+import secrets
+import string
 from flask import current_app
 from werkzeug.security import check_password_hash
 
 from app.models import User
 
 
-STAFF_ROLES = {'admin', 'primary_admin', 'secondary_admin', 'teacher', 'attendant'}
+LOCAL_ADMIN_ROLES = {'school_admin', 'admin', 'primary_admin', 'secondary_admin'}
+STAFF_ROLES = LOCAL_ADMIN_ROLES | {'teacher', 'attendant'}
 LEARNER_ROLES = {'student', 'parent'}
 
 
@@ -14,7 +17,12 @@ def normalize_identifier(value):
 
 
 def first_name_password_matches(user, password):
-    return bool(user and user.is_first_login and password == user.first_name.lower())
+    return bool(
+        user
+        and user.role in LOCAL_ADMIN_ROLES
+        and user.is_first_login
+        and password == user.first_name.lower()
+    )
 
 
 def password_matches(user, password):
@@ -34,7 +42,11 @@ def tenant_prefix(tenant):
 
 
 def custom_id_bucket(role):
-    return 'STU' if role == 'student' else 'STF'
+    if role == 'student':
+        return 'STU'
+    if role in LOCAL_ADMIN_ROLES:
+        return 'ADM'
+    return 'STF'
 
 
 def generate_custom_id(tenant, role, now):
@@ -49,10 +61,22 @@ def generate_custom_id(tenant, role, now):
 
 
 def ensure_custom_id(user, tenant, now):
-    if user.custom_id or not tenant or user.role == 'super_admin':
-        return user.custom_id
-    user.custom_id = generate_custom_id(tenant, user.role, now)
-    return user.custom_id
+    generated_id = user.school_generated_id or user.custom_id
+    if generated_id or not tenant or user.role == 'super_admin':
+        if generated_id:
+            user.school_generated_id = generated_id
+            user.custom_id = generated_id
+        return generated_id
+    generated_id = generate_custom_id(tenant, user.role, now)
+    user.school_generated_id = generated_id
+    user.custom_id = generated_id
+    return generated_id
+
+
+def generate_temporary_password(length=12):
+    """Generate a temporary password suitable for imported school users."""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 def user_payment_locked(user, tenant):

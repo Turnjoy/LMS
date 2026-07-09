@@ -3,7 +3,7 @@ from flask import abort, g, render_template, session
 from flask_login import current_user
 from app.auth_utils import user_payment_locked
 
-LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
+LOCAL_ADMIN_ROLES = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
 
 
 def user_has_role(user, roles):

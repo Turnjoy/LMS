@@ -12,6 +12,8 @@ from app.models import (
     SchoolSetupPreference,
     Assignment,
     AssignmentSubmission,
+    ClassArm,
+    ClassLevel,
     StudentTermAccess,
     StudentTermRegistration,
     TenantPublicProfile,
@@ -28,12 +30,12 @@ from app.models import (
 )
 from app.decorators import role_required
 from app import db
-from app.auth_utils import ensure_custom_id
+from app.auth_utils import ensure_custom_id, generate_temporary_password
 from sqlalchemy import or_
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
-LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
+LOCAL_ADMIN_ROLES = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
 
 
 @admin_bp.before_request
@@ -86,10 +88,59 @@ SSS_EXTRA_ELECTIVES = [
 def _parse_list(raw_value):
     items = []
     for item in (raw_value or '').replace(',', '\n').splitlines():
-        value = item.strip().upper()
-        if len(value) == 1 and 'A' <= value <= 'Z' and value not in items:
+        value = item.strip()
+        if len(value) == 1 and value.isalpha():
+            value = value.upper()
+        if value and value.lower() not in [existing.lower() for existing in items]:
             items.append(value)
     return items
+
+
+def _base_class_levels_for_type(school_type):
+    levels = []
+    if school_type in ('primary', 'both', 'combined'):
+        levels.extend([('Primary 1', 'primary'), ('Primary 2', 'primary'), ('Primary 3', 'primary')])
+        levels.extend([('Primary 4', 'primary'), ('Primary 5', 'primary'), ('Primary 6', 'primary')])
+    if school_type in ('secondary', 'both', 'combined'):
+        levels.extend([('JSS 1', 'secondary'), ('JSS 2', 'secondary'), ('JSS 3', 'secondary')])
+        levels.extend([('SSS 1', 'secondary'), ('SSS 2', 'secondary'), ('SSS 3', 'secondary')])
+    return levels
+
+
+def _get_or_create_class_level(name, category, sort_order=0):
+    level = ClassLevel.query.filter_by(tenant_id=g.current_tenant_id, name=name).first()
+    if level:
+        level.category = category or level.category
+        level.sort_order = sort_order
+        return level, False
+    level = ClassLevel(
+        tenant_id=g.current_tenant_id,
+        name=name,
+        category=category,
+        sort_order=sort_order
+    )
+    db.session.add(level)
+    db.session.flush()
+    return level, True
+
+
+def _get_or_create_class_arm(level, arm_name):
+    arm = ClassArm.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        class_level_id=level.id,
+        name=arm_name
+    ).first()
+    if arm:
+        return arm, False
+    arm = ClassArm(tenant_id=g.current_tenant_id, class_level_id=level.id, name=arm_name)
+    db.session.add(arm)
+    db.session.flush()
+    return arm, True
+
+
+def _class_name_for_level_arm(level_name, arm_name):
+    separator = '' if len(arm_name) == 1 and arm_name.isalpha() else ' '
+    return f'{level_name}{separator}{arm_name}'
 
 
 def _admin_section():
@@ -304,6 +355,11 @@ def _split_setup_items(raw_value):
     return items
 
 
+def _split_setup_lines(raw_value):
+    """Parse newline-separated setup rows without splitting CSV-style commas."""
+    return [line.strip() for line in (raw_value or '').splitlines() if line.strip()]
+
+
 def _parse_date(value):
     if not value:
         return None
@@ -452,7 +508,7 @@ def setup_school():
 @login_required
 @role_required('local_admin')
 def setup_wizard():
-    """Guided setup for class structure after domain linking."""
+    """Guided setup for class levels, class arms, subjects, and first imports."""
     preference = SchoolSetupPreference.query.filter_by(tenant_id=g.current_tenant_id).first()
     if not preference:
         preference = SchoolSetupPreference(tenant_id=g.current_tenant_id)
@@ -460,52 +516,152 @@ def setup_wizard():
         db.session.commit()
 
     if request.method == 'POST':
-        setup_mode = request.form.get('setup_mode') or 'hybrid'
-        school_type = request.form.get('school_type') or 'combined'
-        sections = request.form.getlist('sections')
+        school_type = request.form.get('school_type') or 'both'
+        if school_type not in ('primary', 'secondary', 'both', 'combined'):
+            flash('Choose Primary, Secondary, or Both before completing setup.', 'error')
+            return redirect(url_for('admin.setup_wizard'))
         arms = _parse_list(request.form.get('arms')) or ['A']
-        sss_tracks = request.form.getlist('sss_tracks') or ['Science', 'Humanities', 'Commercial']
-        primary_jss_extras = request.form.getlist('primary_jss_extras')
-        sss_extra_electives = request.form.getlist('sss_extra_electives')
+        subject_names = _split_setup_items(request.form.get('subjects'))
+        teacher_rows = _split_setup_lines(request.form.get('teachers'))
+        student_rows = _split_setup_lines(request.form.get('students'))
 
-        preference.setup_mode = setup_mode
+        preference.setup_mode = 'wizard'
         preference.school_type = school_type
-        preference.sections = sections
+        preference.sections = [school_type]
         preference.arms = arms
-        preference.sss_tracks = sss_tracks
+        preference.sss_tracks = ['Science', 'Humanities', 'Commercial']
         tenant = Tenant.query.get(g.current_tenant_id)
         if tenant:
-            has_primary = any(item in sections for item in ['playgroup', 'kg', 'nursery', 'primary'])
-            has_secondary = any(item in sections for item in ['jss', 'sss'])
-            tenant.sections = 'both' if has_primary and has_secondary else ('primary' if has_primary else 'secondary')
-            tenant.sss_tracks = ','.join(sss_tracks)
+            tenant.sections = 'both' if school_type in ('both', 'combined') else school_type
 
+        created_levels = 0
+        created_arms = 0
         created_classes = 0
+        created_subjects = 0
+        invited_users = []
         generated_classes = []
-        for class_name in _generate_class_names(sections, arms, sss_tracks):
-            exists = Class.query.filter_by(tenant_id=g.current_tenant_id, name=class_name).first()
-            if not exists:
-                section, arm, track = _class_metadata(class_name)
-                exists = Class(tenant_id=g.current_tenant_id, name=class_name, section=section, arm=arm, track=track)
-                db.session.add(exists)
-                db.session.flush()
-                created_classes += 1
-            generated_classes.append(exists)
 
-        created_subjects, created_class_subjects = _apply_curriculum_matrix(
-            generated_classes,
-            primary_jss_extras,
-            sss_extra_electives
-        )
+        for sort_order, (level_name, category) in enumerate(_base_class_levels_for_type(school_type), start=1):
+            level, level_created = _get_or_create_class_level(level_name, category, sort_order)
+            created_levels += int(level_created)
+
+            for subject_name in subject_names:
+                subject = Subject.query.filter_by(
+                    tenant_id=g.current_tenant_id,
+                    class_level_id=level.id,
+                    name=subject_name
+                ).first()
+                if not subject:
+                    subject = Subject(
+                        tenant_id=g.current_tenant_id,
+                        class_level_id=level.id,
+                        name=subject_name
+                    )
+                    db.session.add(subject)
+                    db.session.flush()
+                    created_subjects += 1
+
+            for arm_name in arms:
+                arm, arm_created = _get_or_create_class_arm(level, arm_name)
+                created_arms += int(arm_created)
+                class_name = _class_name_for_level_arm(level.name, arm.name)
+                class_obj = Class.query.filter_by(tenant_id=g.current_tenant_id, name=class_name).first()
+                if not class_obj:
+                    class_obj = Class(
+                        tenant_id=g.current_tenant_id,
+                        class_level_id=level.id,
+                        class_arm_id=arm.id,
+                        name=class_name,
+                        section=category,
+                        arm=arm.name
+                    )
+                    db.session.add(class_obj)
+                    db.session.flush()
+                    created_classes += 1
+
+                for subject in Subject.query.filter_by(tenant_id=g.current_tenant_id, class_level_id=level.id).all():
+                    _get_or_create_class_subject(class_obj.id, subject.id, is_required=True)
+
+                generated_classes.append(class_obj)
+
+        for row in teacher_rows:
+            parts = [part.strip() for part in row.split(',')]
+            if len(parts) < 2:
+                continue
+            name, email = parts[0], parts[1].lower()
+            if not name or not email or User.query.filter_by(tenant_id=g.current_tenant_id, email=email).first():
+                continue
+            password = generate_temporary_password()
+            user = User(
+                tenant_id=g.current_tenant_id,
+                name=name,
+                email=email,
+                role='teacher',
+                is_approved=True,
+                is_first_login=True,
+                payment_status='paid'
+            )
+            ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+            user.set_password(password)
+            db.session.add(user)
+            invited_users.append((email, password))
+
+        class_lookup = {class_obj.name.lower(): class_obj for class_obj in generated_classes}
+        active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
+        if not active_term:
+            active_term = Term(
+                tenant_id=g.current_tenant_id,
+                name='First Term',
+                session=f'{datetime.utcnow().year}/{datetime.utcnow().year + 1}',
+                is_active=True
+            )
+            db.session.add(active_term)
+            db.session.flush()
+
+        for row in student_rows:
+            parts = [part.strip() for part in row.split(',')]
+            if len(parts) < 3:
+                continue
+            name, email, class_name = parts[0], parts[1].lower(), parts[2].lower()
+            if not name or not email or User.query.filter_by(tenant_id=g.current_tenant_id, email=email).first():
+                continue
+            password = generate_temporary_password()
+            student = User(
+                tenant_id=g.current_tenant_id,
+                name=name,
+                email=email,
+                role='student',
+                is_approved=True,
+                is_first_login=True,
+                payment_status='unpaid'
+            )
+            ensure_custom_id(student, g.current_tenant, datetime.utcnow())
+            student.set_password(password)
+            db.session.add(student)
+            db.session.flush()
+            class_obj = class_lookup.get(class_name)
+            if class_obj:
+                db.session.add(StudentClass(
+                    tenant_id=g.current_tenant_id,
+                    student_id=student.id,
+                    class_id=class_obj.id,
+                    term_id=active_term.id
+                ))
+            invited_users.append((email, password))
+
+        if tenant:
+            tenant.setup_completed = True
+            tenant.is_active = True
+            tenant.status = 'approved'
 
         db.session.commit()
         flash(
-            'Setup saved. Added '
-            f'{created_classes} classes, {created_subjects} subjects, '
-            f'and {created_class_subjects} class-subject links.',
+            'Setup complete. Added '
+            f'{created_levels} levels, {created_arms} arms, {created_classes} class streams, '
+            f'{created_subjects} subjects, and {len(invited_users)} users.',
             'success'
         )
-        return redirect(url_for('admin.class_subjects'))
+        return redirect(url_for('admin.dashboard'))
 
     return render_template(
         'portal/admin_setup_wizard.html',
@@ -734,6 +890,8 @@ def review_admission(application_id, action):
         payment_status='unpaid'
     )
     ensure_custom_id(student, g.current_tenant, datetime.utcnow())
+    password = generate_temporary_password()
+    student.set_password(password)
     db.session.add(student)
     db.session.flush()
 
@@ -997,7 +1155,7 @@ def create_user():
     if not all([name, email, role]):
         return jsonify({'error': 'Missing required fields'}), 400
     
-    if role not in ['admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent']:
+    if role not in ['school_admin', 'admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent']:
         return jsonify({'error': 'Invalid role'}), 400
     
     # Check if email already exists for this tenant
@@ -1021,6 +1179,8 @@ def create_user():
         payment_status=data.get('payment_status') or ('unpaid' if role in ['student', 'parent'] else 'paid')
     )
     ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+    temporary_password = data.get('temporary_password') or generate_temporary_password()
+    user.set_password(temporary_password)
     
     db.session.add(user)
     db.session.flush()
@@ -1040,8 +1200,8 @@ def create_user():
         'success': True,
         'message': 'User created successfully',
         'user_id': user.id,
-        'custom_id': user.custom_id,
-        'default_password': user.first_name.lower()
+        'school_generated_id': user.school_generated_id,
+        'temporary_password': temporary_password
     }), 201
 
 
@@ -1061,15 +1221,16 @@ def reset_user_password():
     if target.role == 'super_admin':
         abort(403)
 
-    target.password_hash = None
+    temporary_password = generate_temporary_password()
+    target.set_password(temporary_password)
     target.is_first_login = True
     db.session.commit()
 
     response = {
         'success': True,
-        'message': 'Password reset. User can re-onboard with their lowercase first name.',
-        'custom_id': target.custom_id,
-        'default_password': target.first_name.lower()
+        'message': 'Password reset. Share the temporary password with the user.',
+        'school_generated_id': target.school_generated_id,
+        'temporary_password': temporary_password
     }
     if request.is_json:
         return jsonify(response), 200
@@ -1345,6 +1506,8 @@ def bulk_onboarding():
             payment_status='unpaid' if account_type == 'student' else 'paid'
         )
         ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+        temporary_password = str(row[columns['password']]).strip() if columns.get('password') and not row.isna()[columns['password']] else generate_temporary_password()
+        user.set_password(temporary_password)
         db.session.add(user)
         db.session.flush()
 

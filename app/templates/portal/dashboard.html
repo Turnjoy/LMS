@@ -78,7 +78,7 @@
         margin-left: 10px;
     }
     
-    .role-admin, .role-primary_admin, .role-secondary_admin { background: #e74c3c; color: white; }
+    .role-school_admin, .role-admin, .role-primary_admin, .role-secondary_admin { background: #e74c3c; color: white; }
     .role-teacher { background: #3498db; color: white; }
     .role-student { background: #2ecc71; color: white; }
     .role-attendant { background: #f39c12; color: white; }
@@ -120,7 +120,7 @@
     <p>{% if tenant_domain %}{{ tenant_domain }}{% endif %} Learning Management System</p>
 </div>
 
-{% if current_user.role in ['admin', 'primary_admin', 'secondary_admin'] %}
+{% if current_user.role in ['school_admin', 'admin', 'primary_admin', 'secondary_admin'] %}
 <div class="quick-actions">
     <h2>{% if admin_section %}{{ admin_section|title }} {% endif %}Admin Quick Actions</h2>
     <div class="action-buttons">

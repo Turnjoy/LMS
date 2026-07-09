@@ -55,17 +55,17 @@
 {% block content %}
 <div class="hero">
     <h1>Apply for Turnjoy LMS Access</h1>
-    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Schools submit their website and contact details here. Your request stays pending until the Super Admin reviews and accepts it.</p>
+    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Schools choose a portal subdomain and create the first school admin account. Access stays pending until the Master Admin approves it.</p>
 </div>
 
 <section class="section application-layout">
     <div class="card pending-note">
         <h2>Approval Required</h2>
-        <p>After you apply, your school will not have LMS access immediately. Admin needs to accept your request first from the Super Admin dashboard.</p>
+        <p>After you apply, your school will not have LMS access immediately. Master Admin needs to accept your request first from the dashboard.</p>
         {% if submitted_school %}
         <p><strong>Status:</strong> {{ 'Active' if submitted_school.status == 'approved' else submitted_school.status|title }}</p>
         <p><strong>School:</strong> {{ submitted_school.name }}</p>
-        <p><strong>Website:</strong> {{ submitted_school.application_website or submitted_school.custom_domain }}</p>
+        <p><strong>Subdomain:</strong> {{ submitted_school.subdomain }}</p>
         {% endif %}
     </div>
 
@@ -77,24 +77,20 @@
                 <input name="school_name" required maxlength="100" placeholder="Example International School">
             </label>
             <label>
-                School Website or Domain
-                <input name="website" required maxlength="255" placeholder="school.example.com">
+                Desired Subdomain Prefix
+                <input name="subdomain" required maxlength="50" placeholder="kingscollege">
             </label>
             <label>
-                Contact Person
-                <input name="contact_name" required maxlength="120" placeholder="Principal or school owner">
+                Admin Full Name
+                <input name="admin_name" required maxlength="120" placeholder="Principal or school owner">
             </label>
             <label>
-                Contact Email
-                <input type="email" name="contact_email" required maxlength="120" placeholder="owner@school.example.com">
+                Admin Email
+                <input type="email" name="admin_email" required maxlength="120" placeholder="admin@school.example.com">
             </label>
             <label>
-                Contact Phone
-                <input name="contact_phone" required maxlength="30" placeholder="+234...">
-            </label>
-            <label>
-                Notes
-                <textarea name="note" placeholder="Tell us anything the Super Admin should know before approval."></textarea>
+                Admin Password
+                <input type="password" name="admin_password" required minlength="8" autocomplete="new-password">
             </label>
             <button type="submit" class="btn btn-primary">Submit Application</button>
         </form>

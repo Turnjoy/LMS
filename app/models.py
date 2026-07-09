@@ -29,6 +29,7 @@ class Tenant(db.Model):
     application_note = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     billing_type = db.Column(db.String(20), default='school_pay', nullable=False)
+    setup_completed = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
@@ -290,12 +291,13 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True, index=True)
     custom_id = db.Column(db.String(40), unique=True, index=True)
+    school_generated_id = db.Column(db.String(40), unique=True, index=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), nullable=True, index=True)
     phone_number = db.Column(db.String(30), index=True)
     password_hash = db.Column(db.String(255), nullable=True)
     is_first_login = db.Column(db.Boolean, default=True, nullable=False)
-    role = db.Column(db.String(20), nullable=False)  # 'super_admin', 'admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent'
+    role = db.Column(db.String(20), nullable=False)  # 'super_admin', 'school_admin', 'admin', 'primary_admin', 'secondary_admin', 'teacher', 'student', 'attendant', 'parent'
     payment_status = db.Column(db.String(20), default='unpaid', nullable=False)
     section = db.Column(db.String(20), default=None)  # 'primary', 'secondary', or None for global roles
     is_approved = db.Column(db.Boolean, default=False, nullable=False)
@@ -331,15 +333,62 @@ class User(UserMixin, db.Model):
         return f'<User {self.name} ({self.role})>'
 
 
+class ClassLevel(db.Model):
+    """Base class/grade level owned by one tenant, e.g. Primary 1 or JSS 1."""
+    __tablename__ = 'class_levels'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    name = db.Column(db.String(50), nullable=False)
+    category = db.Column(db.String(20), nullable=False, index=True)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='class_levels')
+    arms = db.relationship('ClassArm', backref='class_level', lazy='dynamic', cascade='all, delete-orphan')
+    classes = db.relationship('Class', backref='class_level', lazy='dynamic')
+    subjects = db.relationship('Subject', backref='class_level', lazy='dynamic')
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'name', name='unique_tenant_class_level'),
+    )
+
+    def __repr__(self):
+        return f'<ClassLevel {self.name}>'
+
+
+class ClassArm(db.Model):
+    """A class stream/section under a base level, e.g. A, Gold, or Diamond."""
+    __tablename__ = 'class_arms'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    class_level_id = db.Column(db.Integer, db.ForeignKey('class_levels.id'), nullable=False, index=True)
+    name = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='class_arms')
+    classes = db.relationship('Class', backref='class_arm', lazy='dynamic')
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'class_level_id', 'name', name='unique_tenant_class_arm'),
+    )
+
+    def __repr__(self):
+        return f'<ClassArm {self.name}>'
+
+
 class Class(db.Model):
     """Represents a class/grade in a school."""
     __tablename__ = 'classes'
     
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    class_level_id = db.Column(db.Integer, db.ForeignKey('class_levels.id'), index=True)
+    class_arm_id = db.Column(db.Integer, db.ForeignKey('class_arms.id'), index=True)
     name = db.Column(db.String(50), nullable=False)
     section = db.Column(db.String(20), index=True)
-    arm = db.Column(db.String(1), index=True)
+    arm = db.Column(db.String(40), index=True)
     track = db.Column(db.String(30), index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -359,6 +408,7 @@ class Subject(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    class_level_id = db.Column(db.Integer, db.ForeignKey('class_levels.id'), index=True)
     name = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     

@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, render_template, request, redirect, ur
 from flask_login import current_user, login_required, login_user
 from sqlalchemy import or_
 from werkzeug.security import check_password_hash
+from app.auth_utils import ensure_custom_id
 from app.models import (
     AdmissionApplication,
     Assignment,
@@ -14,6 +15,8 @@ from app.models import (
     CBTExam,
     CBTQuestion,
     Class,
+    ClassArm,
+    ClassLevel,
     ClassSubject,
     FeeCategory,
     FeeInstallmentMilestone,
@@ -41,7 +44,7 @@ from app import db
 
 public_bp = Blueprint('public', __name__)
 
-LOCAL_ADMIN_ROLES = ('admin', 'primary_admin', 'secondary_admin')
+LOCAL_ADMIN_ROLES = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
 
 
 def _tenant_landing_context():
@@ -87,6 +90,7 @@ def _school_payload(tenant):
         'status_label': 'Active' if status == 'approved' else status.title(),
         'billing_type': tenant.billing_type,
         'school_prefix': tenant.school_prefix,
+        'setup_completed': tenant.setup_completed,
     }
 
 
@@ -120,6 +124,10 @@ def _unique_application_subdomain(seed):
         candidate = f'{trimmed_base}-{suffix}'
         suffix += 1
     return candidate
+
+
+def _normalize_subdomain(value):
+    return re.sub(r'[^a-z0-9-]+', '-', (value or '').strip().lower()).strip('-')[:50]
 
 
 def _ensure_school_initialization(tenant):
@@ -171,6 +179,8 @@ def _delete_school_tree(tenant):
         Term,
         Subject,
         Class,
+        ClassArm,
+        ClassLevel,
     ]:
         model.query.filter_by(tenant_id=tenant_id).delete(synchronize_session=False)
     db.session.delete(tenant)
@@ -184,14 +194,14 @@ def _master_dashboard_context():
     total_active_schools = Tenant.query.filter_by(is_active=True).count()
     total_pending_schools = Tenant.query.filter_by(status='pending').count()
     pending_admins = User.query.filter(
-        User.role.in_(['admin', 'primary_admin', 'secondary_admin']),
+        User.role.in_(LOCAL_ADMIN_ROLES),
         User.is_approved.is_(False)
     ).order_by(User.created_at.asc()).all()
     for tenant in tenants:
         students = User.query.filter_by(tenant_id=tenant.id, role='student').order_by(User.name).all()
         admins = User.query.filter(
             User.tenant_id == tenant.id,
-            User.role.in_(['admin', 'primary_admin', 'secondary_admin'])
+            User.role.in_(LOCAL_ADMIN_ROLES)
         ).count()
         teachers = User.query.filter_by(tenant_id=tenant.id, role='teacher').count()
         families = User.query.filter_by(tenant_id=tenant.id, role='parent').count()
@@ -248,21 +258,25 @@ def apply_school():
 
     if request.method == 'POST':
         school_name = (request.form.get('school_name') or '').strip()
-        website = _normalize_application_website(request.form.get('website'))
-        contact_name = (request.form.get('contact_name') or '').strip()
-        contact_email = (request.form.get('contact_email') or '').strip().lower()
-        contact_phone = (request.form.get('contact_phone') or '').strip()
-        note = (request.form.get('note') or '').strip()
+        desired_subdomain = _normalize_subdomain(request.form.get('subdomain'))
+        admin_name = (request.form.get('admin_name') or '').strip()
+        admin_email = (request.form.get('admin_email') or '').strip().lower()
+        admin_password = request.form.get('admin_password') or ''
 
-        if not all([school_name, website, contact_name, contact_email, contact_phone]):
-            flash('Please complete the school name, website, contact person, email, and phone.', 'error')
+        if not all([school_name, desired_subdomain, admin_name, admin_email, admin_password]):
+            flash('Please complete the school name, desired subdomain, admin name, admin email, and admin password.', 'error')
+            return render_template('public/apply.html'), 400
+        if len(admin_password) < 8:
+            flash('Admin password must be at least 8 characters.', 'error')
+            return render_template('public/apply.html'), 400
+        if not re.match(r'^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$', desired_subdomain):
+            flash('Use a valid subdomain with letters, numbers, and hyphens only.', 'error')
             return render_template('public/apply.html'), 400
 
         existing = Tenant.query.filter(
             or_(
-                Tenant.custom_domain == website,
-                Tenant.application_website == website,
-                Tenant.application_contact_email == contact_email,
+                Tenant.subdomain == desired_subdomain,
+                Tenant.application_contact_email == admin_email,
             )
         ).first()
         if existing:
@@ -272,20 +286,31 @@ def apply_school():
 
         tenant = Tenant(
             name=school_name,
-            subdomain=_unique_application_subdomain(school_name),
-            custom_domain=website,
+            subdomain=desired_subdomain,
             school_prefix=_school_prefix(school_name),
             status='pending',
             is_active=False,
-            application_website=website,
-            application_contact_name=contact_name,
-            application_contact_email=contact_email,
-            application_contact_phone=contact_phone,
-            application_note=note or None,
+            setup_completed=False,
+            application_contact_name=admin_name,
+            application_contact_email=admin_email,
         )
         db.session.add(tenant)
+        db.session.flush()
+
+        admin = User(
+            tenant_id=tenant.id,
+            name=admin_name,
+            email=admin_email,
+            role='school_admin',
+            is_approved=True,
+            is_first_login=True,
+            payment_status='paid',
+        )
+        ensure_custom_id(admin, tenant, tenant.created_at)
+        admin.set_password(admin_password)
+        db.session.add(admin)
         db.session.commit()
-        flash('Application submitted. Admin needs to accept your request first before LMS access is opened.', 'success')
+        flash(f'Application submitted. Your admin ID is {admin.school_generated_id}. Sign in with your email and password after approval.', 'success')
         return render_template('public/apply.html', submitted_school=tenant), 201
 
     return render_template('public/apply.html')
