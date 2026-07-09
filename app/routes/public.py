@@ -465,6 +465,20 @@ def accept_school(school_id):
     return jsonify({'success': True, 'school': _school_payload(tenant)}), 200
 
 
+@public_bp.route('/_master_hq_2026/school/<int:school_id>/accept', methods=['POST'])
+def accept_school_html(school_id):
+    if not _is_master_admin():
+        abort(403)
+
+    tenant = Tenant.query.filter_by(id=school_id).first_or_404()
+    tenant.status = 'approved'
+    tenant.is_active = True
+    _ensure_school_initialization(tenant)
+    db.session.commit()
+    flash(f'{tenant.name} has been approved.', 'success')
+    return redirect(url_for('public.master_dashboard'))
+
+
 @public_bp.route('/api/admin/school/<int:school_id>/reject', methods=['POST'])
 def reject_school(school_id):
     if not session.get('is_super_admin'):
@@ -477,6 +491,19 @@ def reject_school(school_id):
     return jsonify({'success': True, 'school': _school_payload(tenant)}), 200
 
 
+@public_bp.route('/_master_hq_2026/school/<int:school_id>/reject', methods=['POST'])
+def reject_school_html(school_id):
+    if not _is_master_admin():
+        abort(403)
+
+    tenant = Tenant.query.filter_by(id=school_id).first_or_404()
+    tenant.status = 'rejected'
+    tenant.is_active = False
+    db.session.commit()
+    flash(f'{tenant.name} has been rejected.', 'warning')
+    return redirect(url_for('public.master_dashboard'))
+
+
 @public_bp.route('/api/admin/school/<int:school_id>/delete', methods=['DELETE', 'POST'])
 def delete_school(school_id):
     if not session.get('is_super_admin'):
@@ -486,3 +513,16 @@ def delete_school(school_id):
     _delete_school_tree(tenant)
     db.session.commit()
     return jsonify({'success': True, 'deleted_school_id': school_id}), 200
+
+
+@public_bp.route('/_master_hq_2026/school/<int:school_id>/delete', methods=['POST'])
+def delete_school_html(school_id):
+    if not _is_master_admin():
+        abort(403)
+
+    tenant = Tenant.query.filter_by(id=school_id).first_or_404()
+    tenant_name = tenant.name
+    _delete_school_tree(tenant)
+    db.session.commit()
+    flash(f'{tenant_name} has been permanently deleted.', 'success')
+    return redirect(url_for('public.master_dashboard'))

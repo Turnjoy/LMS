@@ -189,20 +189,32 @@
                         <td data-billing-label>{{ item.tenant.billing_type }}</td>
                         <td>
                             <div class="school-controls">
-                                <input data-prefix-input value="{{ item.tenant.school_prefix }}" maxlength="12" aria-label="School prefix">
-                                <select data-active-select aria-label="Portal status">
-                                    <option value="true" {% if item.tenant.is_active %}selected{% endif %}>Active</option>
-                                    <option value="false" {% if not item.tenant.is_active %}selected{% endif %}>Locked</option>
-                                </select>
-                                <select data-billing-select aria-label="Billing type">
-                                    <option value="school_pay" {% if item.tenant.billing_type == 'school_pay' %}selected{% endif %}>School Pay</option>
-                                    <option value="student_pay" {% if item.tenant.billing_type == 'student_pay' %}selected{% endif %}>Student Pay</option>
-                                </select>
-                                <button type="button" class="btn btn-primary" data-save-school="{{ item.tenant.id }}">Save</button>
-                                <button type="button" class="btn btn-primary" data-school-action="accept" data-school-id="{{ item.tenant.id }}" {% if item.status == 'approved' %}hidden{% endif %}>Accept</button>
-                                <button type="button" class="btn btn-secondary" data-school-action="reject" data-school-id="{{ item.tenant.id }}" {% if item.status == 'rejected' %}hidden{% endif %}>Reject</button>
-                                <button type="button" class="btn btn-danger" data-school-action="delete" data-school-id="{{ item.tenant.id }}">Delete</button>
-                                <button type="button" class="btn btn-secondary" data-school-metrics="{{ item.tenant.id }}">Metrics</button>
+                                <form method="POST" action="{{ url_for('public.update_tenant_billing', tenant_id=item.tenant.id) }}" style="display: inline;">
+                                    <input name="school_prefix" value="{{ item.tenant.school_prefix }}" maxlength="12" aria-label="School prefix">
+                                    <select name="is_active" aria-label="Portal status">
+                                        <option value="true" {% if item.tenant.is_active %}selected{% endif %}>Active</option>
+                                        <option value="false" {% if not item.tenant.is_active %}selected{% endif %}>Locked</option>
+                                    </select>
+                                    <select name="billing_type" aria-label="Billing type">
+                                        <option value="school_pay" {% if item.tenant.billing_type == 'school_pay' %}selected{% endif %}>School Pay</option>
+                                        <option value="student_pay" {% if item.tenant.billing_type == 'student_pay' %}selected{% endif %}>Student Pay</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-primary">Save</button>
+                                </form>
+                                {% if item.status != 'approved' %}
+                                <form method="POST" action="{{ url_for('public.accept_school_html', school_id=item.tenant.id) }}" style="display: inline;">
+                                    <button type="submit" class="btn btn-primary">Accept</button>
+                                </form>
+                                {% endif %}
+                                {% if item.status != 'rejected' %}
+                                <form method="POST" action="{{ url_for('public.reject_school_html', school_id=item.tenant.id) }}" style="display: inline;">
+                                    <button type="submit" class="btn btn-secondary">Reject</button>
+                                </form>
+                                {% endif %}
+                                <form method="POST" action="{{ url_for('public.delete_school_html', school_id=item.tenant.id) }}" onsubmit="return confirm('Delete {{ item.tenant.name }}? This permanently purges the school and its tenant data.');" style="display: inline;">
+                                    <button type="submit" class="btn btn-danger">Delete</button>
+                                </form>
+                                <a href="{{ url_for('public.master_tenant_metrics', tenant_id=item.tenant.id) }}" class="btn btn-secondary">Metrics</a>
                                 <a href="{{ url_for('public.master_tenant_detail', tenant_id=item.tenant.id) }}" class="btn btn-secondary">Details</a>
                             </div>
                         </td>
@@ -217,94 +229,7 @@
 
 {% block extra_js %}
 <script>
-    const dashboardBaseUrl = "{{ url_for('public.master_dashboard') }}";
-
-    function updateRow(row, school) {
-        const statusLabel = row.querySelector('[data-status-label]');
-        const billingLabel = row.querySelector('[data-billing-label]');
-        const statusClass = school.status === 'approved' ? 'active' : school.status;
-        row.dataset.schoolStatus = school.status;
-        statusLabel.textContent = school.status_label;
-        statusLabel.classList.remove('status-active', 'status-pending', 'status-rejected', 'status-locked');
-        statusLabel.classList.add(`status-${statusClass}`);
-        billingLabel.textContent = school.billing_type;
-        row.querySelector('[data-active-select]').value = school.is_active ? 'true' : 'false';
-        row.querySelector('[data-school-action="accept"]').hidden = school.status === 'approved';
-        row.querySelector('[data-school-action="reject"]').hidden = school.status === 'rejected';
-    }
-
-    document.querySelectorAll('[data-save-school]').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const schoolId = button.dataset.saveSchool;
-            const row = document.querySelector(`[data-school-row="${schoolId}"]`);
-            button.disabled = true;
-            const response = await fetch(`${dashboardBaseUrl}/api/schools/${schoolId}`, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    school_prefix: row.querySelector('[data-prefix-input]').value,
-                    is_active: row.querySelector('[data-active-select]').value === 'true',
-                    billing_type: row.querySelector('[data-billing-select]').value
-                })
-            });
-            const data = await response.json();
-            button.disabled = false;
-            if (response.ok) {
-                updateRow(row, data.school);
-            } else {
-                alert(data.error || 'Unable to update school controls.');
-            }
-        });
-    });
-
-    document.querySelectorAll('[data-school-action]').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const schoolId = button.dataset.schoolId;
-            const action = button.dataset.schoolAction;
-            const row = document.querySelector(`[data-school-row="${schoolId}"]`);
-
-            if (action === 'delete') {
-                const schoolName = row.querySelector('strong').textContent.trim();
-                if (!confirm(`Delete ${schoolName}? This permanently purges the school and its tenant data.`)) {
-                    return;
-                }
-            }
-
-            button.disabled = true;
-            const response = await fetch(`/api/admin/school/${schoolId}/${action}`, {
-                method: action === 'delete' ? 'DELETE' : 'POST',
-                headers: {'Content-Type': 'application/json'}
-            });
-            const data = await response.json();
-            button.disabled = false;
-
-            if (!response.ok) {
-                alert(data.error || `Unable to ${action} school.`);
-                return;
-            }
-
-            if (action === 'delete') {
-                row.remove();
-                return;
-            }
-
-            updateRow(row, data.school);
-        });
-    });
-
-    document.querySelectorAll('[data-school-metrics]').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const schoolId = button.dataset.schoolMetrics;
-            const response = await fetch(`${dashboardBaseUrl}/tenant/${schoolId}/metrics`);
-            const data = await response.json();
-            document.querySelector('#drilldown-content').innerHTML = `
-                <h3>${data.school_name}</h3>
-                <p><strong>Total Students:</strong> ${data.total_students}</p>
-                <p><strong>Total Teachers:</strong> ${data.total_teachers}</p>
-                <p><strong>Total Families/Parents:</strong> ${data.total_families}</p>
-                <p><strong>Status:</strong> ${data.status_label} | <strong>Billing:</strong> ${data.billing_type}</p>
-            `;
-        });
-    });
+    // JavaScript removed - forms now use proper HTML POST requests
+    // All actions (Save, Accept, Reject, Delete) are handled by backend routes
 </script>
 {% endblock %}

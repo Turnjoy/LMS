@@ -82,6 +82,12 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
         if 'billing_type' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN billing_type VARCHAR(20) NOT NULL DEFAULT 'school_pay'")
+        if 'sections' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN sections VARCHAR(20)")
+        if 'sss_tracks' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN sss_tracks VARCHAR(100)")
+        if 'structured_code' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN structured_code VARCHAR(40)")
 
         user_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
         if 'is_approved' not in user_columns:
@@ -96,6 +102,10 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_first_login BOOLEAN NOT NULL DEFAULT 0")
         if 'payment_status' not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid'")
+        if 'section' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN section VARCHAR(20)")
+        if 'is_active' not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
 
         class_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(classes)").fetchall()]
         if 'section' not in class_columns:
