@@ -231,7 +231,7 @@ def create_app(config_name='default'):
     def set_tenant_context():
         """Resolve the browser host to a tenant context and enforce school lockouts."""
         # Skip tenant lookup for master admin routes, static files, health checks, and marketing/public pages
-        public_routes = ['/', '/about', '/pricing', '/contact', '/apply', '/login', '/signup', '/landing']
+        public_routes = ['/', '/about', '/pricing', '/contact', '/apply', '/landing']
         if (request.path.startswith('/_master_hq_2026') or 
             request.path.startswith('/static') or 
             request.path in ['/favicon.ico', '/healthz'] or

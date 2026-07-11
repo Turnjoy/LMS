@@ -4,168 +4,355 @@
 
 {% block extra_css %}
 <style>
+    .master-shell {
+        display: grid;
+        gap: 24px;
+    }
+
     .metric-row {
         display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        margin-top: 22px;
+        gap: 14px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 24px;
     }
 
     .metric {
-        background: #ffffff;
-        border: 1px solid #dfe8f1;
-        border-radius: 8px;
+        width: 100%;
+        min-height: 118px;
         padding: 18px;
+        border: 1px solid #d8e3ee;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #17324d;
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .metric:hover,
+    .metric.active {
+        border-color: #2563eb;
+        background: #f4f8ff;
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.1);
+    }
+
+    .metric h2 {
+        margin: 0;
+        font-size: 2.2rem;
+        line-height: 1;
+    }
+
+    .metric p {
+        margin: 12px 0 0;
+        color: #52677c;
+        font-weight: 700;
+    }
+
+    .school-panel {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 22px;
+    }
+
+    .school-panel h2 {
+        margin: 0 0 16px;
+    }
+
+    .school-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .school-card {
+        border: 1px solid #dbe5ef;
+        border-radius: 8px;
+        background: #ffffff;
+        overflow: hidden;
+    }
+
+    .school-button {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        width: 100%;
+        padding: 16px;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .school-button:hover {
+        background: #f8fbff;
+    }
+
+    .school-name {
+        margin: 0;
+        color: #172b42;
+        font-size: 1rem;
+        font-weight: 800;
+        overflow-wrap: anywhere;
+    }
+
+    .school-code,
+    .school-domain {
+        margin: 5px 0 0;
+        color: #5e7186;
+        font-size: 0.92rem;
+        overflow-wrap: anywhere;
+    }
+
+    .status-pill {
+        align-self: start;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .status-active {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .status-pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .school-detail {
+        display: none;
+        border-top: 1px solid #e5edf5;
+        padding: 16px;
+        background: #fbfdff;
+    }
+
+    .school-detail.show {
+        display: block;
+    }
+
+    .detail-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .detail-stat {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px;
+        background: #ffffff;
+    }
+
+    .detail-stat strong {
+        display: block;
+        color: #52677c;
+        font-size: 0.86rem;
+    }
+
+    .detail-stat span {
+        display: block;
+        margin-top: 8px;
+        color: #172b42;
+        font-size: 1.5rem;
+        font-weight: 800;
+    }
+
+    .pending-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+    }
+
+    .action-button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        cursor: pointer;
+        font-weight: 800;
+    }
+
+    .accept-button {
+        background: #15803d;
+        color: #ffffff;
+    }
+
+    .reject-button {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+    }
+
+    .empty-state {
+        padding: 28px 12px;
+        color: #64748b;
+        text-align: center;
+    }
+
+    @media (max-width: 760px) {
+        .hero {
+            padding: 26px 18px;
+        }
+
+        .metric-row,
+        .detail-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .school-button {
+            grid-template-columns: 1fr;
+        }
+
+        .status-pill {
+            justify-self: start;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="hero">
-    <h1>Master Platform Dashboard</h1>
-    <p style="max-width: 760px; margin-top: 18px; line-height: 1.7;">Review every registered school, approve school admins, and control portal access without Render tenant environment variables.</p>
-    <div class="metric-row">
-        <div class="metric">
-            <h2>{{ total_schools or 0 }}</h2>
-            <p>Total schools</p>
-        </div>
-        <div class="metric">
-            <h2>{{ total_active_schools or 0 }}</h2>
-            <p>Active schools</p>
-        </div>
-        <div class="metric">
-            <h2>{{ total_pending_schools or 0 }}</h2>
-            <p>Pending requests</p>
-        </div>
-        <div class="metric">
-            <h2>{{ total_students or 0 }}</h2>
-            <p>Total students</p>
-        </div>
-    </div>
-</div>
+<div class="hero master-shell">
+    <div>
+        <h1>Master Platform Dashboard</h1>
+        <p style="max-width: 760px; margin-top: 14px; line-height: 1.7;">Track school applications and open each school to see its own teachers and students.</p>
 
-<div class="section">
-    <div class="card" id="school-drilldown">
-        <h2>School Drill-down</h2>
-        <div id="drilldown-content" style="margin-top: 16px;"></div>
-    </div>
-</div>
-
-<div class="section">
-    <div class="card">
-        <h2>Pending School Admin Approval</h2>
-        {% if pending_admins %}
-            <div style="display: grid; gap: 12px; margin-top: 16px;">
-                {% for admin in pending_admins %}
-                <form method="POST" action="{{ url_for('public.accept_school_admin', user_id=admin.id) }}" class="card" style="padding: 14px; background: #f6fbff;">
-                    <strong>{{ admin.name }}</strong>
-                    <p>{{ admin.email }} &bull; {{ admin.role }} &bull; {{ admin.tenant.name if admin.tenant else 'Unknown school' }}</p>
-                    <button type="submit" class="btn btn-primary">Accept</button>
-                </form>
-                {% endfor %}
-            </div>
-        {% else %}
-            <p style="margin-top: 12px;">No pending school admin signups.</p>
-        {% endif %}
-    </div>
-</div>
-
-<div class="section">
-    <div class="card">
-        <h2>All Schools</h2>
-        <div class="overflow-x-auto mt-4">
-            <table class="w-full border-collapse">
-                <thead>
-                    <tr class="border-b border-gray-200">
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">School</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Domain</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Users</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Billing</th>
-                        <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    {% for item in tenant_data %}
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-4 py-4">
-                            <div>
-                                <div class="font-medium text-gray-900">{{ item.tenant.name }}</div>
-                                <div class="text-sm text-gray-500">{{ item.school_code }}</div>
-                            </div>
-                        </td>
-                        <td class="px-4 py-4 text-sm text-gray-700">
-                            {{ item.tenant.application_website or item.tenant.custom_domain or item.tenant.subdomain }}
-                        </td>
-                        <td class="px-4 py-4">
-                            <div class="text-sm">
-                                <div class="font-medium text-gray-900">{{ item.tenant.application_contact_name or 'Not provided' }}</div>
-                                <div class="text-gray-500">{{ item.tenant.application_contact_email or '' }}</div>
-                                {% if item.tenant.application_contact_phone %}
-                                <div class="text-gray-500">{{ item.tenant.application_contact_phone }}</div>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td class="px-4 py-4 text-sm text-gray-700">
-                            <div>{{ item.admin_count }} admins</div>
-                            <div>{{ item.teacher_count }} teachers</div>
-                            <div>{{ item.student_count }} students</div>
-                        </td>
-                        <td class="px-4 py-4">
-                            {% if item.status == 'approved' %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Active
-                            </span>
-                            {% elif item.status == 'pending' %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                Pending
-                            </span>
-                            {% else %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                {{ item.status|title }}
-                            </span>
-                            {% endif %}
-                        </td>
-                        <td class="px-4 py-4 text-sm text-gray-700">
-                            {{ item.tenant.billing_type }}
-                        </td>
-                        <td class="px-4 py-4 text-right">
-                            <div class="flex items-center justify-end gap-2">
-                                {% if item.status != 'approved' %}
-                                <form method="POST" action="{{ url_for('public.accept_school_html', school_id=item.tenant.id) }}" class="inline">
-                                    <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
-                                        Accept
-                                    </button>
-                                </form>
-                                {% endif %}
-                                {% if item.status != 'rejected' %}
-                                <form method="POST" action="{{ url_for('public.reject_school_html', school_id=item.tenant.id) }}" class="inline">
-                                    <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
-                                        Reject
-                                    </button>
-                                </form>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                            No schools registered yet.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="metric-row" aria-label="School dashboard metrics">
+            <button type="button" class="metric" onclick="showSchools('all')" id="metric-all">
+                <h2>{{ total_schools or 0 }}</h2>
+                <p>Total schools</p>
+            </button>
+            <button type="button" class="metric" onclick="showSchools('active')" id="metric-active">
+                <h2>{{ total_active_schools or 0 }}</h2>
+                <p>Active schools</p>
+            </button>
+            <button type="button" class="metric" onclick="showSchools('pending')" id="metric-pending">
+                <h2>{{ total_pending_schools or 0 }}</h2>
+                <p>Pending requests</p>
+            </button>
         </div>
     </div>
+
+    <section class="school-panel" aria-live="polite">
+        <h2 id="list-title">Schools</h2>
+        <div class="school-list" id="schools-container"></div>
+    </section>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // JavaScript removed - forms now use proper HTML POST requests
-    // All actions (Save, Accept, Reject, Delete) are handled by backend routes
+    const allSchools = {{ tenant_data | tojson }};
+
+    function statusLabel(status) {
+        return status === 'approved' ? 'Active' : 'Pending';
+    }
+
+    function statusClass(status) {
+        return status === 'approved' ? 'status-active' : 'status-pending';
+    }
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, (character) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[character]));
+    }
+
+    function schoolActions(item) {
+        if (item.status !== 'pending') {
+            return '';
+        }
+
+        return `
+            <div class="pending-actions">
+                <form method="POST" action="/_master_hq_2026/school/${item.id}/accept">
+                    <button type="submit" class="action-button accept-button">Accept school</button>
+                </form>
+                <form method="POST" action="/_master_hq_2026/school/${item.id}/reject">
+                    <button type="submit" class="action-button reject-button">Reject</button>
+                </form>
+            </div>
+        `;
+    }
+
+    function renderSchool(item) {
+        const schoolName = escapeHtml(item.name);
+        const schoolCode = escapeHtml(item.school_code);
+        const schoolDomain = escapeHtml(item.domain || 'No domain provided');
+
+        return `
+            <article class="school-card">
+                <button type="button" class="school-button" onclick="toggleSchoolDetail(${item.id})" aria-expanded="false" aria-controls="detail-${item.id}">
+                    <span>
+                        <span class="school-name">${schoolName}</span>
+                        <span class="school-code">${schoolCode}</span>
+                        <span class="school-domain">${schoolDomain}</span>
+                    </span>
+                    <span class="status-pill ${statusClass(item.status)}">${statusLabel(item.status)}</span>
+                </button>
+                <div class="school-detail" id="detail-${item.id}">
+                    <div class="detail-grid">
+                        <div class="detail-stat">
+                            <strong>School admins</strong>
+                            <span>${item.admin_count}</span>
+                        </div>
+                        <div class="detail-stat">
+                            <strong>Teachers</strong>
+                            <span>${item.teacher_count}</span>
+                        </div>
+                        <div class="detail-stat">
+                            <strong>Students</strong>
+                            <span>${item.student_count}</span>
+                        </div>
+                    </div>
+                    ${schoolActions(item)}
+                </div>
+            </article>
+        `;
+    }
+
+    function showSchools(filter) {
+        const container = document.getElementById('schools-container');
+        const title = document.getElementById('list-title');
+
+        document.querySelectorAll('.metric').forEach((metric) => metric.classList.remove('active'));
+        document.getElementById(`metric-${filter}`).classList.add('active');
+
+        let filteredSchools = allSchools;
+        if (filter === 'active') {
+            filteredSchools = allSchools.filter((school) => school.status === 'approved');
+            title.textContent = 'Active Schools';
+        } else if (filter === 'pending') {
+            filteredSchools = allSchools.filter((school) => school.status === 'pending');
+            title.textContent = 'Pending Requests';
+        } else {
+            filteredSchools = allSchools.filter((school) => school.status === 'approved');
+            title.textContent = 'Schools';
+        }
+
+        if (!filteredSchools.length) {
+            container.innerHTML = '<div class="empty-state">No schools found.</div>';
+            return;
+        }
+
+        container.innerHTML = filteredSchools.map(renderSchool).join('');
+    }
+
+    function toggleSchoolDetail(tenantId) {
+        const detail = document.getElementById(`detail-${tenantId}`);
+        const button = document.querySelector(`[aria-controls="detail-${tenantId}"]`);
+        const isOpen = detail.classList.toggle('show');
+        if (button) {
+            button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        }
+    }
+
+    showSchools('pending');
 </script>
 {% endblock %}
