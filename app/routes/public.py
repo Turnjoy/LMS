@@ -75,7 +75,7 @@ def _is_master_admin():
 def _school_status(tenant):
     if tenant.status in ('pending', 'rejected'):
         return tenant.status
-    return 'approved' if tenant.is_active else 'rejected'
+    return 'active' if tenant.is_active and tenant.status in ('active', 'approved') else 'rejected'
 
 
 def _school_payload(tenant):
@@ -87,7 +87,7 @@ def _school_payload(tenant):
         'subdomain': tenant.subdomain,
         'is_active': tenant.is_active,
         'status': status,
-        'status_label': 'Active' if status == 'approved' else status.title(),
+        'status_label': 'Active' if status == 'active' else status.title(),
         'billing_type': tenant.billing_type,
         'school_prefix': tenant.school_prefix,
         'setup_completed': tenant.setup_completed,
@@ -191,29 +191,46 @@ def _master_dashboard_context():
     tenant_data = []
     total_students = User.query.filter_by(role='student').count()
     total_schools = Tenant.query.count()
-    total_active_schools = Tenant.query.filter_by(is_active=True).count()
+    total_active_schools = Tenant.query.filter(
+        Tenant.is_active.is_(True),
+        Tenant.status.in_(('active', 'approved'))
+    ).count()
     total_pending_schools = Tenant.query.filter_by(status='pending').count()
     pending_admins = User.query.filter(
         User.role.in_(LOCAL_ADMIN_ROLES),
         User.is_approved.is_(False)
     ).order_by(User.created_at.asc()).all()
     for tenant in tenants:
-        students = User.query.filter_by(tenant_id=tenant.id, role='student').order_by(User.name).all()
+        students = User.query.filter_by(tenant_id=tenant.id, role='student').count()
         admins = User.query.filter(
             User.tenant_id == tenant.id,
             User.role.in_(LOCAL_ADMIN_ROLES)
         ).count()
         teachers = User.query.filter_by(tenant_id=tenant.id, role='teacher').count()
         families = User.query.filter_by(tenant_id=tenant.id, role='parent').count()
+        domain = tenant.application_website or tenant.custom_domain or tenant.subdomain or ''
+        section_config = (tenant.sections or 'both').title()
+        sss_tracks = [
+            track.strip()
+            for track in (tenant.sss_tracks or 'Science,Humanities,Commercial').split(',')
+            if track.strip()
+        ]
         tenant_data.append({
-            'tenant': tenant,
+            'id': tenant.id,
+            'name': tenant.name,
             'status': _school_status(tenant),
             'school_code': tenant.structured_code,
-            'student_count': len(students),
+            'domain': domain,
+            'contact_name': tenant.application_contact_name or 'Not provided',
+            'contact_email': tenant.application_contact_email or '',
+            'contact_phone': tenant.application_contact_phone or '',
+            'billing_type': tenant.billing_type,
+            'section_config': section_config,
+            'sss_tracks': sss_tracks,
+            'student_count': students,
             'admin_count': admins,
             'teacher_count': teachers,
             'family_count': families,
-            'students': students,
         })
     return {
         'tenant_data': tenant_data,
@@ -280,7 +297,7 @@ def apply_school():
             )
         ).first()
         if existing:
-            status_label = 'Active' if _school_status(existing) == 'approved' else _school_status(existing).title()
+            status_label = 'Active' if _school_status(existing) == 'active' else _school_status(existing).title()
             flash(f'This school request is already on file. Current status: {status_label}.', 'info')
             return render_template('public/apply.html', submitted_school=existing), 200
 
@@ -415,7 +432,7 @@ def master_tenant_metrics(tenant_id):
         'school_name': tenant.name,
         'school_prefix': tenant.school_prefix,
         'status': _school_status(tenant),
-        'status_label': 'Active' if _school_status(tenant) == 'approved' else _school_status(tenant).title(),
+        'status_label': 'Active' if _school_status(tenant) == 'active' else _school_status(tenant).title(),
         'is_active': tenant.is_active,
         'billing_type': tenant.billing_type,
         'total_students': User.query.filter_by(tenant_id=tenant.id, role='student').count(),
@@ -439,7 +456,7 @@ def update_tenant_billing(tenant_id):
     tenant.billing_type = billing_type
     tenant.school_prefix = (request.form.get('school_prefix') or tenant.school_prefix or 'SCH').strip().upper()[:12]
     tenant.is_active = request.form.get('is_active') == 'on'
-    tenant.status = 'approved' if tenant.is_active else 'rejected'
+    tenant.status = 'active' if tenant.is_active else 'rejected'
     db.session.commit()
     flash(f'{tenant.name} billing and lock status updated.', 'success')
     return redirect(url_for('public.master_dashboard'))
@@ -455,14 +472,14 @@ def update_school_controls(tenant_id):
 
     if 'is_active' in data:
         tenant.is_active = bool(data['is_active'])
-        tenant.status = 'approved' if tenant.is_active else 'rejected'
+        tenant.status = 'active' if tenant.is_active else 'rejected'
 
     if 'status' in data:
         status = data['status']
-        if status not in ['pending', 'approved', 'rejected']:
+        if status not in ['pending', 'active', 'approved', 'rejected']:
             return jsonify({'error': 'Invalid status'}), 400
-        tenant.status = status
-        tenant.is_active = status == 'approved'
+        tenant.status = 'active' if status == 'approved' else status
+        tenant.is_active = tenant.status == 'active'
 
     if 'billing_type' in data:
         billing_type = data['billing_type']
@@ -483,7 +500,7 @@ def accept_school(school_id):
         return jsonify({'error': 'Forbidden'}), 403
 
     tenant = Tenant.query.filter_by(id=school_id).first_or_404()
-    tenant.status = 'approved'
+    tenant.status = 'active'
     tenant.is_active = True
     _ensure_school_initialization(tenant)
     db.session.commit()
@@ -496,7 +513,7 @@ def accept_school_html(school_id):
         abort(403)
 
     tenant = Tenant.query.filter_by(id=school_id).first_or_404()
-    tenant.status = 'approved'
+    tenant.status = 'active'
     tenant.is_active = True
     _ensure_school_initialization(tenant)
     db.session.commit()

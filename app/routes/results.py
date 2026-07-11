@@ -146,7 +146,10 @@ def get_student_results(student_id):
     results = Result.query.filter_by(
         tenant_id=g.current_tenant_id,
         student_id=student_id
-    ).all()
+    )
+    if current_user.role == 'student':
+        results = results.filter_by(is_published=True)
+    results = results.all()
     
     results_data = [{
         'id': r.id,

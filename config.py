@@ -30,6 +30,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     MASTER_OWNER_EMAIL = os.environ.get('MASTER_OWNER_EMAIL')
     MASTER_ADMIN_PASSWORD = os.environ.get('MASTER_ADMIN_PASSWORD')
+    MARKETING_DOMAINS = os.environ.get('MARKETING_DOMAINS', 'turnjoy.com,www.turnjoy.com,turnjoy-lms.onrender.com')
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
     GEMINI_MODEL = os.environ.get('GEMINI_MODEL') or 'gemini-1.5-flash'
     SQLALCHEMY_TRACK_MODIFICATIONS = False

@@ -6,7 +6,7 @@ alter table public.tenants
 
 update public.tenants
 set status = case
-    when is_active then 'approved'
+    when is_active then 'active'
     else 'rejected'
 end
 where status = 'pending';
@@ -14,8 +14,8 @@ where status = 'pending';
 alter table public.tenants
     drop constraint if exists tenants_status_check,
     add constraint tenants_status_check
-        check (status in ('pending', 'approved', 'rejected'));
+        check (status in ('pending', 'active', 'approved', 'rejected'));
 
 create index if not exists idx_tenants_status on public.tenants(status);
 
-comment on column public.tenants.status is 'Lifecycle status for school onboarding: pending, approved, or rejected.';
+comment on column public.tenants.status is 'Lifecycle status for school onboarding: pending, active, or rejected. approved is accepted as a legacy active value.';

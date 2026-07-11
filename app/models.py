@@ -1,10 +1,73 @@
 from datetime import datetime
+from flask import g, has_request_context
 from flask_sqlalchemy import SQLAlchemy
+from flask_sqlalchemy.query import Query
 from flask_login import UserMixin
+from sqlalchemy.orm import synonym
 from sqlalchemy.ext.hybrid import hybrid_property
 from werkzeug.security import generate_password_hash, check_password_hash
 
-db = SQLAlchemy()
+
+class TenantScopedQuery(Query):
+    """Automatically constrain tenant-owned models while a tenant request is active."""
+
+    _tenant_scope_applied = False
+
+    def _should_scope_to_current_tenant(self):
+        if self._tenant_scope_applied or not has_request_context():
+            return False
+        tenant_id = getattr(g, 'current_tenant_id', None)
+        if tenant_id is None or getattr(g, 'disable_tenant_scope', False):
+            return False
+        try:
+            mapper = self._only_full_mapper_zero('tenant scoped query')
+        except Exception:
+            return False
+        return hasattr(mapper.class_, 'tenant_id')
+
+    def _with_current_tenant(self):
+        if not self._should_scope_to_current_tenant():
+            return self
+        mapper = self._only_full_mapper_zero('tenant scoped query')
+        query = self.enable_assertions(False).filter(mapper.class_.tenant_id == g.current_tenant_id)
+        query._tenant_scope_applied = True
+        return query
+
+    def __iter__(self):
+        return super(TenantScopedQuery, self._with_current_tenant()).__iter__()
+
+    def all(self):
+        return super(TenantScopedQuery, self._with_current_tenant()).all()
+
+    def first(self):
+        return super(TenantScopedQuery, self._with_current_tenant()).first()
+
+    def one(self):
+        return super(TenantScopedQuery, self._with_current_tenant()).one()
+
+    def one_or_none(self):
+        return super(TenantScopedQuery, self._with_current_tenant()).one_or_none()
+
+    def count(self):
+        return super(TenantScopedQuery, self._with_current_tenant()).count()
+
+    def get(self, ident):
+        return super(TenantScopedQuery, self._with_current_tenant()).get(ident)
+
+    def get_or_404(self, ident, description=None):
+        return super(TenantScopedQuery, self._with_current_tenant()).get_or_404(ident, description=description)
+
+    def first_or_404(self, description=None):
+        return super(TenantScopedQuery, self._with_current_tenant()).first_or_404(description=description)
+
+    def delete(self, synchronize_session='auto', delete_args=None):
+        return super(TenantScopedQuery, self._with_current_tenant()).delete(
+            synchronize_session=synchronize_session,
+            delete_args=delete_args,
+        )
+
+
+db = SQLAlchemy(query_class=TenantScopedQuery)
 
 
 class Tenant(db.Model):
@@ -13,6 +76,7 @@ class Tenant(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    school_name = synonym('name')
     subdomain = db.Column(db.String(50), unique=True, nullable=False, index=True)
     custom_domain = db.Column(db.String(255), unique=True, index=True)
     logo_url = db.Column(db.String(255))

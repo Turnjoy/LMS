@@ -5,11 +5,20 @@
 {% block content %}
 <div class="card">
     <h1>School Setup Wizard</h1>
-    <p style="color: #666; margin-top: 8px;">Complete the first tenant setup. This creates base class levels, arms, subjects, optional users, and unlocks the school portal.</p>
+    <p style="color: #666; margin-top: 8px;">Choose Type of Setup, then create base class levels, arms, subjects, optional users, and unlock the school portal.</p>
 </div>
 
 <form method="POST" action="{{ url_for('admin.setup_wizard') }}" class="card">
-    <h2>1. School Type</h2>
+    <h2>1. Choose Type of Setup</h2>
+    <div class="form-group">
+        <label for="setup_mode">Setup mode</label>
+        <select id="setup_mode" name="setup_mode" required>
+            <option value="quick">Quick Automated Template Setup</option>
+            <option value="manual">Manual Custom School Setup</option>
+        </select>
+    </div>
+
+    <h2>2. School Type</h2>
     <div class="form-group">
         <label for="school_type">Choose the categories this school runs</label>
         <select id="school_type" name="school_type" required>
@@ -19,14 +28,14 @@
         </select>
     </div>
 
-    <h2>2. Class Arms & Streams</h2>
+    <h2>3. Class Arms & Streams</h2>
     <div class="form-group">
         <label for="arms">Arms or stream names</label>
         <input id="arms" name="arms" value="A,B,C" placeholder="A,B,C or Gold,Diamond">
         <p style="color: #666;">Examples: A,B,C creates Primary 1A and JSS 1B. Gold,Diamond creates Primary 1 Gold and Primary 1 Diamond.</p>
     </div>
 
-    <h2>3. Subject Registration</h2>
+    <h2>4. Subject Registration</h2>
     <div class="form-group">
         <label for="subjects">Subjects taught at each generated base class level</label>
         <textarea id="subjects" name="subjects" rows="8" placeholder="Mathematics&#10;English Language&#10;Civic Education">Mathematics
@@ -34,7 +43,7 @@ English Language
 Civic Education</textarea>
     </div>
 
-    <h2>4. User Import & ID Generation</h2>
+    <h2>5. User Import & ID Generation</h2>
     <div class="form-group">
         <label for="teachers">Teachers to invite</label>
         <textarea id="teachers" name="teachers" rows="5" placeholder="Teacher Name, teacher@email.com"></textarea>

@@ -516,16 +516,22 @@ def setup_wizard():
         db.session.commit()
 
     if request.method == 'POST':
+        setup_mode = request.form.get('setup_mode') or 'quick'
+        if setup_mode not in ('quick', 'manual'):
+            flash('Choose Quick Automated Template Setup or Manual Custom School Setup.', 'error')
+            return redirect(url_for('admin.setup_wizard'))
+
         school_type = request.form.get('school_type') or 'both'
         if school_type not in ('primary', 'secondary', 'both', 'combined'):
             flash('Choose Primary, Secondary, or Both before completing setup.', 'error')
             return redirect(url_for('admin.setup_wizard'))
         arms = _parse_list(request.form.get('arms')) or ['A']
-        subject_names = _split_setup_items(request.form.get('subjects'))
+        default_subjects = 'Mathematics\nEnglish Language\nCivic Education'
+        subject_names = _split_setup_items(request.form.get('subjects')) or _split_setup_items(default_subjects)
         teacher_rows = _split_setup_lines(request.form.get('teachers'))
         student_rows = _split_setup_lines(request.form.get('students'))
 
-        preference.setup_mode = 'wizard'
+        preference.setup_mode = setup_mode
         preference.school_type = school_type
         preference.sections = [school_type]
         preference.arms = arms
@@ -652,7 +658,7 @@ def setup_wizard():
         if tenant:
             tenant.setup_completed = True
             tenant.is_active = True
-            tenant.status = 'approved'
+            tenant.status = 'active'
 
         db.session.commit()
         flash(

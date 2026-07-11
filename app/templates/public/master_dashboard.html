@@ -12,7 +12,7 @@
     .metric-row {
         display: grid;
         gap: 14px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         margin-top: 24px;
     }
 
@@ -24,16 +24,24 @@
         border-radius: 8px;
         background: #ffffff;
         color: #17324d;
-        cursor: pointer;
         text-align: left;
         transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
     }
 
-    .metric:hover,
+    .metric-clickable {
+        cursor: pointer;
+    }
+
+    .metric-clickable:hover,
     .metric.active {
         border-color: #2563eb;
         background: #f4f8ff;
         box-shadow: 0 10px 24px rgba(37, 99, 235, 0.1);
+    }
+
+    .metric-static {
+        cursor: default;
+        background: #f8fafc;
     }
 
     .metric h2 {
@@ -59,44 +67,73 @@
         margin: 0 0 16px;
     }
 
-    .school-list {
-        display: grid;
-        gap: 12px;
-    }
-
-    .school-card {
-        border: 1px solid #dbe5ef;
-        border-radius: 8px;
-        background: #ffffff;
-        overflow: hidden;
-    }
-
-    .school-button {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 16px;
+    .table-wrap {
         width: 100%;
-        padding: 16px;
-        border: 0;
-        background: transparent;
-        text-align: left;
-        cursor: pointer;
+        overflow-x: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
     }
 
-    .school-button:hover {
+    .school-table {
+        width: 100%;
+        min-width: 860px;
+        border-collapse: collapse;
+        background: #ffffff;
+    }
+
+    .school-table th {
+        padding: 13px 16px;
+        border-bottom: 1px solid #dbe5ef;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 0.76rem;
+        letter-spacing: 0.04em;
+        text-align: left;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .school-table td {
+        padding: 15px 16px;
+        border-bottom: 1px solid #edf2f7;
+        color: #334155;
+        font-size: 0.92rem;
+        vertical-align: top;
+    }
+
+    .school-table tbody tr:hover,
+    .school-table tbody tr.selected {
         background: #f8fbff;
     }
 
-    .school-name {
-        margin: 0;
-        color: #172b42;
+    .school-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .school-link {
+        display: inline-block;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: #2563eb;
+        cursor: pointer;
         font-size: 1rem;
         font-weight: 800;
+        font-family: inherit;
+        text-decoration: none;
+        text-align: left;
         overflow-wrap: anywhere;
     }
 
-    .school-code,
-    .school-domain {
+    .school-link:hover,
+    .school-link:focus {
+        color: #1d4ed8;
+        text-decoration: underline;
+    }
+
+    .school-meta,
+    .school-domain,
+    .school-contact {
         margin: 5px 0 0;
         color: #5e7186;
         font-size: 0.92rem;
@@ -122,15 +159,33 @@
         color: #92400e;
     }
 
-    .school-detail {
-        display: none;
-        border-top: 1px solid #e5edf5;
-        padding: 16px;
+    .status-rejected {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .drilldown-panel {
+        margin-top: 18px;
+        border: 1px solid #dbe5ef;
+        border-radius: 8px;
+        padding: 18px;
         background: #fbfdff;
     }
 
-    .school-detail.show {
-        display: block;
+    .drilldown-heading {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+
+    .drilldown-heading h3 {
+        margin: 0;
+        color: #172b42;
+        font-size: 1.18rem;
+        overflow-wrap: anywhere;
     }
 
     .detail-grid {
@@ -160,11 +215,38 @@
         font-weight: 800;
     }
 
+    .config-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 14px;
+    }
+
+    .config-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px;
+        background: #ffffff;
+        min-width: 0;
+    }
+
+    .config-item strong {
+        display: block;
+        color: #52677c;
+        font-size: 0.82rem;
+    }
+
+    .config-item span {
+        display: block;
+        margin-top: 6px;
+        color: #172b42;
+        overflow-wrap: anywhere;
+    }
+
     .pending-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
-        margin-top: 16px;
     }
 
     .action-button {
@@ -198,16 +280,9 @@
         }
 
         .metric-row,
-        .detail-grid {
+        .detail-grid,
+        .config-grid {
             grid-template-columns: 1fr;
-        }
-
-        .school-button {
-            grid-template-columns: 1fr;
-        }
-
-        .status-pill {
-            justify-self: start;
         }
     }
 </style>
@@ -220,24 +295,52 @@
         <p style="max-width: 760px; margin-top: 14px; line-height: 1.7;">Track school applications and open each school to see its own teachers and students.</p>
 
         <div class="metric-row" aria-label="School dashboard metrics">
-            <button type="button" class="metric" onclick="showSchools('all')" id="metric-all">
+            <button type="button" class="metric metric-clickable" onclick="showSchools('all')" id="metric-all">
                 <h2>{{ total_schools or 0 }}</h2>
                 <p>Total schools</p>
             </button>
-            <button type="button" class="metric" onclick="showSchools('active')" id="metric-active">
+            <button type="button" class="metric metric-clickable" onclick="showSchools('active')" id="metric-active">
                 <h2>{{ total_active_schools or 0 }}</h2>
                 <p>Active schools</p>
             </button>
-            <button type="button" class="metric" onclick="showSchools('pending')" id="metric-pending">
+            <button type="button" class="metric metric-clickable" onclick="showSchools('pending')" id="metric-pending">
                 <h2>{{ total_pending_schools or 0 }}</h2>
                 <p>Pending requests</p>
             </button>
+            <div class="metric metric-static" aria-label="Total students">
+                <h2>{{ total_students or 0 }}</h2>
+                <p>Total students</p>
+            </div>
         </div>
     </div>
 
     <section class="school-panel" aria-live="polite">
         <h2 id="list-title">Schools</h2>
-        <div class="school-list" id="schools-container"></div>
+        <div class="table-wrap">
+            <table class="school-table">
+                <thead>
+                    <tr>
+                        <th>School</th>
+                        <th>Domain</th>
+                        <th>Contact</th>
+                        <th>Users</th>
+                        <th>Status</th>
+                        <th>Billing</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="schools-container"></tbody>
+            </table>
+        </div>
+        <div id="empty-state" class="empty-state" hidden>No schools found.</div>
+
+        <section class="drilldown-panel" id="school-drilldown" aria-live="polite">
+            <div class="drilldown-heading">
+                <h3>School Drill-down</h3>
+                <span class="status-pill status-pending">Select a school</span>
+            </div>
+            <p class="school-contact">Choose a school name from the table to load that tenant's configuration and totals.</p>
+        </section>
     </section>
 </div>
 {% endblock %}
@@ -247,11 +350,23 @@
     const allSchools = {{ tenant_data | tojson }};
 
     function statusLabel(status) {
-        return status === 'approved' ? 'Active' : 'Pending';
+        if (status === 'active' || status === 'approved') {
+            return 'Active';
+        }
+        if (status === 'pending') {
+            return 'Pending';
+        }
+        return 'Rejected';
     }
 
     function statusClass(status) {
-        return status === 'approved' ? 'status-active' : 'status-pending';
+        if (status === 'active' || status === 'approved') {
+            return 'status-active';
+        }
+        if (status === 'pending') {
+            return 'status-pending';
+        }
+        return 'status-rejected';
     }
 
     function escapeHtml(value) {
@@ -265,18 +380,18 @@
     }
 
     function schoolActions(item) {
-        if (item.status !== 'pending') {
-            return '';
-        }
-
         return `
             <div class="pending-actions">
+                ${item.status !== 'active' && item.status !== 'approved' ? `
                 <form method="POST" action="/_master_hq_2026/school/${item.id}/accept">
                     <button type="submit" class="action-button accept-button">Accept school</button>
                 </form>
+                ` : ''}
+                ${item.status !== 'rejected' ? `
                 <form method="POST" action="/_master_hq_2026/school/${item.id}/reject">
                     <button type="submit" class="action-button reject-button">Reject</button>
                 </form>
+                ` : ''}
             </div>
         `;
     }
@@ -285,74 +400,139 @@
         const schoolName = escapeHtml(item.name);
         const schoolCode = escapeHtml(item.school_code);
         const schoolDomain = escapeHtml(item.domain || 'No domain provided');
+        const contactName = escapeHtml(item.contact_name || 'Not provided');
+        const contactEmail = escapeHtml(item.contact_email || '');
+        const contactPhone = escapeHtml(item.contact_phone || '');
+        const billingType = escapeHtml(item.billing_type || 'school_pay');
+        const isSelected = selectedSchoolId === item.id ? 'selected' : '';
 
         return `
-            <article class="school-card">
-                <button type="button" class="school-button" onclick="toggleSchoolDetail(${item.id})" aria-expanded="false" aria-controls="detail-${item.id}">
-                    <span>
-                        <span class="school-name">${schoolName}</span>
-                        <span class="school-code">${schoolCode}</span>
-                        <span class="school-domain">${schoolDomain}</span>
-                    </span>
-                    <span class="status-pill ${statusClass(item.status)}">${statusLabel(item.status)}</span>
-                </button>
-                <div class="school-detail" id="detail-${item.id}">
-                    <div class="detail-grid">
-                        <div class="detail-stat">
-                            <strong>School admins</strong>
-                            <span>${item.admin_count}</span>
-                        </div>
-                        <div class="detail-stat">
-                            <strong>Teachers</strong>
-                            <span>${item.teacher_count}</span>
-                        </div>
-                        <div class="detail-stat">
-                            <strong>Students</strong>
-                            <span>${item.student_count}</span>
-                        </div>
-                    </div>
-                    ${schoolActions(item)}
-                </div>
-            </article>
+            <tr class="${isSelected}" data-school-id="${item.id}">
+                <td>
+                    <button type="button" class="school-link" onclick="selectSchool(${item.id})" aria-controls="school-drilldown">
+                        ${schoolName}
+                    </button>
+                    <div class="school-meta">${schoolCode}</div>
+                </td>
+                <td><div class="school-domain">${schoolDomain}</div></td>
+                <td>
+                    <strong>${contactName}</strong>
+                    ${contactEmail ? `<div class="school-contact">${contactEmail}</div>` : ''}
+                    ${contactPhone ? `<div class="school-contact">${contactPhone}</div>` : ''}
+                </td>
+                <td>
+                    <div>${item.admin_count} admins</div>
+                    <div>${item.teacher_count} teachers</div>
+                    <div>${item.student_count} students</div>
+                </td>
+                <td><span class="status-pill ${statusClass(item.status)}">${statusLabel(item.status)}</span></td>
+                <td>${billingType}</td>
+                <td>${schoolActions(item)}</td>
+            </tr>
         `;
     }
 
-    function showSchools(filter) {
-        const container = document.getElementById('schools-container');
-        const title = document.getElementById('list-title');
+    let activeFilter = null;
+    let selectedSchoolId = null;
 
-        document.querySelectorAll('.metric').forEach((metric) => metric.classList.remove('active'));
-        document.getElementById(`metric-${filter}`).classList.add('active');
+    function showSchools(filter, allowToggle = true) {
+        const container = document.getElementById('schools-container');
+        const emptyState = document.getElementById('empty-state');
+        const title = document.getElementById('list-title');
+        const nextFilter = allowToggle && activeFilter === filter && filter !== 'all' ? 'all' : filter;
+        activeFilter = nextFilter;
+
+        document.querySelectorAll('.metric-clickable').forEach((metric) => metric.classList.remove('active'));
+        document.getElementById(`metric-${nextFilter}`).classList.add('active');
 
         let filteredSchools = allSchools;
-        if (filter === 'active') {
-            filteredSchools = allSchools.filter((school) => school.status === 'approved');
+        if (nextFilter === 'active') {
+            filteredSchools = allSchools.filter((school) => school.status === 'active' || school.status === 'approved');
             title.textContent = 'Active Schools';
-        } else if (filter === 'pending') {
+        } else if (nextFilter === 'pending') {
             filteredSchools = allSchools.filter((school) => school.status === 'pending');
             title.textContent = 'Pending Requests';
         } else {
-            filteredSchools = allSchools.filter((school) => school.status === 'approved');
-            title.textContent = 'Schools';
+            title.textContent = 'All Schools';
         }
 
         if (!filteredSchools.length) {
-            container.innerHTML = '<div class="empty-state">No schools found.</div>';
+            container.innerHTML = '';
+            emptyState.hidden = false;
             return;
         }
 
+        emptyState.hidden = true;
         container.innerHTML = filteredSchools.map(renderSchool).join('');
     }
 
-    function toggleSchoolDetail(tenantId) {
-        const detail = document.getElementById(`detail-${tenantId}`);
-        const button = document.querySelector(`[aria-controls="detail-${tenantId}"]`);
-        const isOpen = detail.classList.toggle('show');
-        if (button) {
-            button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        }
+    function renderDrilldown(item) {
+        const schoolName = escapeHtml(item.name);
+        const schoolCode = escapeHtml(item.school_code);
+        const domain = escapeHtml(item.domain || 'No domain provided');
+        const sectionConfig = escapeHtml(item.section_config || 'Both');
+        const tracks = escapeHtml((item.sss_tracks || []).join(', ') || 'Not configured');
+        const billingType = escapeHtml(item.billing_type || 'school_pay');
+
+        return `
+            <div class="drilldown-heading">
+                <h3>${schoolName}</h3>
+                <span class="status-pill ${statusClass(item.status)}">${statusLabel(item.status)}</span>
+            </div>
+            <div class="detail-grid">
+                <div class="detail-stat">
+                    <strong>Total Admins</strong>
+                    <span>${item.admin_count}</span>
+                </div>
+                <div class="detail-stat">
+                    <strong>Total Teachers</strong>
+                    <span>${item.teacher_count}</span>
+                </div>
+                <div class="detail-stat">
+                    <strong>Total Students</strong>
+                    <span>${item.student_count}</span>
+                </div>
+            </div>
+            <div class="config-grid">
+                <div class="config-item">
+                    <strong>Tenant Code</strong>
+                    <span>${schoolCode}</span>
+                </div>
+                <div class="config-item">
+                    <strong>Domain</strong>
+                    <span>${domain}</span>
+                </div>
+                <div class="config-item">
+                    <strong>Section Configuration</strong>
+                    <span>${sectionConfig}</span>
+                </div>
+                <div class="config-item">
+                    <strong>SSS Tracks</strong>
+                    <span>${tracks}</span>
+                </div>
+                <div class="config-item">
+                    <strong>Billing Type</strong>
+                    <span>${billingType}</span>
+                </div>
+                <div class="config-item">
+                    <strong>Families/Parents</strong>
+                    <span>${item.family_count}</span>
+                </div>
+            </div>
+        `;
     }
 
-    showSchools('pending');
+    function selectSchool(tenantId) {
+        const selected = allSchools.find((school) => school.id === tenantId);
+        if (!selected) {
+            return;
+        }
+        selectedSchoolId = tenantId;
+        document.getElementById('school-drilldown').innerHTML = renderDrilldown(selected);
+        showSchools(activeFilter || 'all', false);
+        document.getElementById('school-drilldown').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    showSchools('pending', false);
 </script>
 {% endblock %}

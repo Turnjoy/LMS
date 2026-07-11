@@ -1,5 +1,6 @@
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_login import LoginManager
+from werkzeug.exceptions import HTTPException
 from config import config
 from app.models import db, Tenant
 from urllib.parse import urlparse
@@ -33,12 +34,20 @@ def _school_session_payload(tenant):
     }
 
 
+def _tenant_is_active(tenant):
+    """Return True for live tenant domains, accepting legacy approved rows."""
+    if not tenant:
+        return False
+    status = (tenant.status or '').lower()
+    return bool(tenant.is_active) and status in ('active', 'approved')
+
+
 def _is_school_lockout_required(tenant):
     """Return True when a matched school is suspended for school-pay billing."""
     if not tenant:
         return False
     if getattr(tenant, 'status', None) in ('pending', 'rejected'):
-        return True
+        return str(getattr(tenant, 'billing_type', 'school_pay')) == 'school_pay' or not bool(getattr(tenant, 'is_active', True))
     return not bool(getattr(tenant, 'is_active', True)) and str(getattr(tenant, 'billing_type', 'school_pay')) == 'school_pay'
 
 
@@ -52,6 +61,27 @@ def _subdomain_from_host(host):
     if len(parts) >= 3:
         return parts[0]
     return None
+
+
+def _marketing_domains(app):
+    configured = app.config.get('MARKETING_DOMAINS')
+    if configured:
+        if isinstance(configured, str):
+            domains = configured.split(',')
+        else:
+            domains = configured
+    else:
+        domains = ['turnjoy.com', 'www.turnjoy.com', 'turnjoy-lms.onrender.com', 'turnjoy-lms.up.railway.app']
+    normalized = {_normalize_host(domain) for domain in domains if domain}
+    return normalized | {f'www.{domain}' for domain in normalized if not domain.startswith('www.')}
+
+
+def _local_dev_domains():
+    return {'localhost', '127.0.0.1', '0.0.0.0'}
+
+
+def _is_marketing_host(app, host):
+    return host in _marketing_domains(app) or host in _local_dev_domains()
 
 
 def _scope_tenant_query(query, tenant_id=None):
@@ -102,7 +132,7 @@ def _ensure_runtime_schema():
         if 'school_prefix' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN school_prefix VARCHAR(12) NOT NULL DEFAULT 'SCH'")
         if 'status' not in tenant_columns:
-            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'approved'")
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_tenants_status ON tenants (status)")
         if 'application_website' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN application_website VARCHAR(255)")
@@ -229,32 +259,43 @@ def create_app(config_name='default'):
     # Global before_request middleware for multi-tenant isolation
     @app.before_request
     def set_tenant_context():
-        """Resolve the browser host to a tenant context and enforce school lockouts."""
-        # Skip tenant lookup for master admin routes, static files, health checks, and marketing/public pages
-        public_routes = ['/', '/about', '/pricing', '/contact', '/apply', '/landing']
-        if (request.path.startswith('/_master_hq_2026') or 
-            request.path.startswith('/static') or 
-            request.path in ['/favicon.ico', '/healthz'] or
-            request.path in public_routes):
+        """Resolve hostnames into marketing or isolated tenant contexts."""
+        g.current_tenant_id = None
+        g.current_tenant = None
+        g.current_school = None
+
+        if request.path.startswith('/static') or request.path in ['/favicon.ico', '/healthz']:
             return
 
         try:
             host = _normalize_host(request.headers.get('Host') or request.host)
+            g.current_domain = host
             tenant = None
+            is_marketing_host = _is_marketing_host(app, host)
+            is_master_path = request.path.startswith('/turnjoy-master-admin') or request.path.startswith('/_master_hq_2026')
+            marketing_only_paths = {'/', '/about', '/pricing', '/contact', '/apply', '/admin'}
 
-            # Skip tenant lookup for known marketing/root domains
-            marketing_domains = ['turnjoy.com', 'www.turnjoy.com', 'turnjoy-lms.onrender.com', 'turnjoy-lms.up.railway.app']
-            if host in marketing_domains or any(host.endswith(f'.{domain}') for domain in marketing_domains):
+            if is_master_path and not is_marketing_host:
+                abort(404)
+
+            if is_marketing_host:
+                session.pop('current_tenant', None)
                 return
 
-            if host not in ['localhost', '127.0.0.1', '0.0.0.0']:
+            if host not in _local_dev_domains():
                 tenant = Tenant.query.filter_by(custom_domain=host).first()
 
                 subdomain = _subdomain_from_host(host)
                 if not tenant and subdomain:
                     tenant = Tenant.query.filter_by(subdomain=subdomain).first()
 
+            if not tenant and request.path in marketing_only_paths:
+                abort(404)
+
             if tenant:
+                if not _tenant_is_active(tenant):
+                    return render_template('public/lockout.html', tenant=tenant), 403
+
                 g.current_tenant_id = tenant.id
                 g.current_tenant = tenant
                 g.current_school = tenant
@@ -270,13 +311,10 @@ def create_app(config_name='default'):
                     logout_user()
                     return render_template('public/lockout.html', tenant=tenant), 403
 
-                if _is_school_lockout_required(tenant):
-                    return render_template('public/lockout.html', tenant=tenant), 403
-
                 if (
                     current_user.is_authenticated
                     and current_user.role in ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
-                    and tenant.status == 'approved'
+                    and _tenant_is_active(tenant)
                     and not bool(getattr(tenant, 'setup_completed', False))
                     and request.endpoint not in ('auth.logout', 'auth.change_password', 'auth.setup_wizard_redirect')
                     and not request.path.startswith('/admin/setup-wizard')
@@ -292,15 +330,15 @@ def create_app(config_name='default'):
                     ).first() is not None
                     return render_template('portal/login.html', admin_exists=admin_exists, tenant=tenant)
             else:
-                g.current_tenant_id = None
-                g.current_tenant = None
-                g.current_school = None
-                g.current_domain = host
                 session.pop('current_tenant', None)
 
                 if request.path == '/':
-                    return render_template('public/index.html')
+                    abort(404)
+        except HTTPException:
+            raise
         except Exception:
+            if request.path.startswith('/turnjoy-master-admin') or request.path.startswith('/_master_hq_2026'):
+                abort(404)
             g.current_tenant_id = None
             g.current_tenant = None
             g.current_school = None
