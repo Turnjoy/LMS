@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash, g, abort, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
@@ -149,6 +150,70 @@ def setup_wizard_redirect():
     if current_user.role not in LOCAL_ADMIN_ROLES:
         abort(403)
     return redirect(url_for('admin.setup_wizard'))
+
+
+@auth_bp.route('/initial-setup', methods=['POST'])
+def initial_setup():
+    """Create the first tenant admin from the public setup wizard."""
+    tenant = getattr(g, 'current_tenant', None)
+    if not tenant:
+        abort(404)
+
+    if _admin_exists():
+        flash('This school already has an administrator. Please sign in.', 'info')
+        return redirect(url_for('auth.login'))
+
+    admin_name = (request.form.get('admin_name') or '').strip()
+    admin_email = (request.form.get('admin_email') or '').strip().lower()
+    admin_password = request.form.get('admin_password') or ''
+    confirm_password = request.form.get('confirm_password') or ''
+    school_name = (request.form.get('school_name') or tenant.name or '').strip()
+    primary_color = (request.form.get('primary_color') or tenant.primary_color or '#3498db').strip()
+    secondary_color = (request.form.get('secondary_color') or tenant.secondary_color or '#2ecc71').strip()
+
+    color_pattern = re.compile(r'^#[0-9a-fA-F]{6}$')
+    if not all([admin_name, admin_email, admin_password, confirm_password, school_name]):
+        flash('Please complete every setup field.', 'error')
+        return render_template('portal/login.html', admin_exists=False), 400
+    if len(admin_password) < 8 or admin_password != confirm_password:
+        flash('Use a matching admin password with at least 8 characters.', 'error')
+        return render_template('portal/login.html', admin_exists=False), 400
+    if not color_pattern.match(primary_color) or not color_pattern.match(secondary_color):
+        flash('Choose valid primary and secondary colors.', 'error')
+        return render_template('portal/login.html', admin_exists=False), 400
+
+    existing = User.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        email=admin_email
+    ).first()
+    if existing:
+        flash('That email is already registered for this school.', 'error')
+        return render_template('portal/login.html', admin_exists=False), 400
+
+    tenant.name = school_name
+    tenant.primary_color = primary_color
+    tenant.secondary_color = secondary_color
+    tenant.setup_completed = True
+    tenant.application_contact_name = tenant.application_contact_name or admin_name
+    tenant.application_contact_email = tenant.application_contact_email or admin_email
+
+    admin = User(
+        tenant_id=g.current_tenant_id,
+        name=admin_name,
+        email=admin_email,
+        role='school_admin',
+        is_approved=True,
+        is_first_login=False,
+        payment_status='paid',
+    )
+    ensure_custom_id(admin, tenant, datetime.utcnow())
+    admin.set_password(admin_password)
+
+    db.session.add(admin)
+    db.session.commit()
+
+    flash(f'School setup completed. Your admin ID is {admin.custom_id}. Please sign in.', 'success')
+    return redirect(url_for('auth.login'))
 
 
 @auth_bp.route('/forgot-id', methods=['GET', 'POST'])

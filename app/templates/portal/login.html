@@ -1,209 +1,318 @@
 {% extends "base.html" %}
 
-{% block title %}Sign In - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+{% block title %}{% if admin_exists %}Student & Staff Portal{% else %}School Setup{% endif %} - {% if tenant_domain %}{{ tenant_domain }}{% else %}Turnjoy LMS{% endif %}{% endblock %}
 
 {% block extra_css %}
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
     body {
-        background: #f4f7fb;
+        background:
+            radial-gradient(circle at top left, color-mix(in srgb, var(--primary-color) 16%, transparent), transparent 34rem),
+            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
     }
 
-    .auth-shell {
-        display: grid;
-        grid-template-columns: minmax(280px, 1fr) minmax(320px, 1fr);
-        gap: 24px;
-        align-items: stretch;
-        min-height: 72vh;
-        padding: 24px 0;
+    .container {
+        max-width: 1180px;
     }
 
-    .auth-panel {
-        background: #ffffff;
-        border: 1px solid #e4e8ef;
+    .portal-shell {
+        min-height: 74vh;
+    }
+
+    .brand-gradient {
+        background:
+            linear-gradient(135deg, color-mix(in srgb, var(--primary-color) 92%, #111827), color-mix(in srgb, var(--secondary-color) 90%, #111827));
+    }
+
+    .tj-field {
+        width: 100%;
+        border: 1px solid #d8dee8;
         border-radius: 8px;
-        box-shadow: 0 12px 32px rgba(21, 35, 54, 0.08);
-        padding: 28px;
-    }
-
-    .auth-panel h1,
-    .auth-panel h2 {
-        margin-bottom: 8px;
-        color: #202b3a;
-    }
-
-    .auth-panel p {
-        color: #647084;
-        margin-bottom: 22px;
-    }
-
-    .brand-panel {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 18px;
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        color: #ffffff;
-    }
-
-    .brand-panel p,
-    .brand-panel h1 {
-        color: #ffffff;
-    }
-
-    .auth-logo {
-        width: 76px;
-        height: 76px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 3px solid rgba(255, 255, 255, 0.8);
         background: #ffffff;
+        padding: 0.78rem 0.9rem;
+        font-size: 0.98rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
-    .auth-grid {
-        display: grid;
-        grid-template-columns: 1fr 1.15fr;
-        gap: 24px;
+    .tj-field:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 18%, transparent);
+        outline: none;
     }
 
-    .auth-form {
-        display: grid;
-        gap: 14px;
-    }
-
-    .auth-form .form-group {
-        margin-bottom: 0;
-    }
-
-    .auth-actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
+    .tj-button {
         align-items: center;
-        margin-top: 8px;
+        border-radius: 8px;
+        display: inline-flex;
+        font-weight: 700;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0.72rem 1.05rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     }
 
-    .auth-note {
-        font-size: 0.92rem;
-        line-height: 1.45;
+    .tj-button:hover {
+        transform: translateY(-1px);
     }
 
-    .parent-fields {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
+    .tj-button-primary {
+        background: var(--primary-color);
+        box-shadow: 0 14px 28px color-mix(in srgb, var(--primary-color) 24%, transparent);
+        color: #ffffff;
     }
 
-    @media (max-width: 980px) {
-        .auth-shell,
-        .auth-grid {
-            grid-template-columns: 1fr;
-        }
+    .tj-button-secondary {
+        background: #ffffff;
+        border: 1px solid #d8dee8;
+        color: #1f2937;
     }
 
-    @media (max-width: 640px) {
-        .auth-panel {
-            padding: 22px;
-        }
+    .setup-step {
+        display: none;
+    }
 
-        .parent-fields {
-            grid-template-columns: 1fr;
+    .setup-step.is-active {
+        display: block;
+    }
+
+    .step-dot {
+        background: #e5e7eb;
+        color: #64748b;
+    }
+
+    .step-dot.is-active,
+    .step-dot.is-complete {
+        background: var(--primary-color);
+        color: #ffffff;
+    }
+
+    input[type="color"].tj-color {
+        height: 3.25rem;
+        padding: 0.35rem;
+    }
+
+    @media (max-width: 760px) {
+        .portal-shell {
+            min-height: auto;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="auth-shell">
-    <section class="auth-panel brand-panel">
-        <img src="{{ tenant.logo_url if tenant and tenant.logo_url else url_for('static', filename='images/turnjoy.png') }}" alt="School Logo" class="auth-logo">
-        <div>
-            <h1>{% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}</h1>
-            <p>One portal for staff, parents, guardians, and students to manage school work, communication, admissions, payments, attendance, and results.</p>
-        </div>
-        <div class="auth-actions">
-            <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-secondary">Student Admission</a>
-        </div>
+<div class="portal-shell py-6 md:py-10" data-admin-exists="{{ 'true' if admin_exists else 'false' }}">
+    {% if not admin_exists %}
+    <section class="grid gap-6 lg:grid-cols-[0.9fr_1.35fr]">
+        <aside class="brand-gradient overflow-hidden rounded-lg p-7 text-white shadow-xl">
+            <div class="flex items-center gap-4">
+                <img src="{{ tenant.logo_url if tenant and tenant.logo_url else url_for('static', filename='images/turnjoy.png') }}" alt="School Logo" class="h-16 w-16 rounded-full border-4 border-white/70 bg-white object-cover">
+                <div>
+                    <p class="text-sm font-semibold uppercase tracking-[0.16em] text-white/75">Turnjoy LMS</p>
+                    <h1 class="text-3xl font-black leading-tight">{{ tenant.name if tenant else 'School Setup' }}</h1>
+                </div>
+            </div>
+
+            <div class="mt-10 space-y-5">
+                <div class="rounded-lg border border-white/18 bg-white/12 p-5">
+                    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Step 1</p>
+                    <h2 class="mt-1 text-xl font-bold text-white">Create the first administrator</h2>
+                    <p class="mt-2 text-sm leading-6 text-white/78">This account becomes the school owner inside the portal.</p>
+                </div>
+                <div class="rounded-lg border border-white/18 bg-white/12 p-5">
+                    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Step 2</p>
+                    <h2 class="mt-1 text-xl font-bold text-white">Confirm school identity</h2>
+                    <p class="mt-2 text-sm leading-6 text-white/78">Set the display name and brand colors used across the tenant.</p>
+                </div>
+                <div class="rounded-lg border border-white/18 bg-white/12 p-5">
+                    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Step 3</p>
+                    <h2 class="mt-1 text-xl font-bold text-white">Open the portal</h2>
+                    <p class="mt-2 text-sm leading-6 text-white/78">Submit once, then sign in with the new administrator account.</p>
+                </div>
+            </div>
+        </aside>
+
+        <section class="rounded-lg border border-slate-200 bg-white p-6 shadow-xl md:p-8">
+            <div class="mb-7 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <p class="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">School Setup Wizard</p>
+                    <h2 class="mt-2 text-3xl font-black leading-tight text-slate-900">Finish your portal setup</h2>
+                </div>
+                <div class="flex gap-2" aria-label="Setup progress">
+                    <span class="step-dot flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold is-active" data-step-dot="0">1</span>
+                    <span class="step-dot flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold" data-step-dot="1">2</span>
+                    <span class="step-dot flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold" data-step-dot="2">3</span>
+                </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('auth.initial_setup') }}" id="setupWizard" class="space-y-7">
+                <div class="setup-step is-active" data-step="0">
+                    <div class="grid gap-5">
+                        <div>
+                            <label for="admin_name" class="mb-2 block text-sm font-bold text-slate-700">Administrator Full Name</label>
+                            <input id="admin_name" name="admin_name" class="tj-field" required autocomplete="name" placeholder="Jane Adebayo">
+                        </div>
+                        <div>
+                            <label for="admin_email" class="mb-2 block text-sm font-bold text-slate-700">Admin Email</label>
+                            <input id="admin_email" name="admin_email" type="email" class="tj-field" required autocomplete="email" placeholder="admin@school.edu">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-step" data-step="1">
+                    <div class="grid gap-5 md:grid-cols-2">
+                        <div>
+                            <label for="admin_password" class="mb-2 block text-sm font-bold text-slate-700">Admin Password</label>
+                            <input id="admin_password" name="admin_password" type="password" minlength="8" class="tj-field" required autocomplete="new-password" placeholder="Minimum 8 characters">
+                        </div>
+                        <div>
+                            <label for="confirm_password" class="mb-2 block text-sm font-bold text-slate-700">Confirm Password</label>
+                            <input id="confirm_password" name="confirm_password" type="password" minlength="8" class="tj-field" required autocomplete="new-password" placeholder="Repeat password">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-step" data-step="2">
+                    <div class="grid gap-5">
+                        <div>
+                            <label for="school_name" class="mb-2 block text-sm font-bold text-slate-700">School Display Name</label>
+                            <input id="school_name" name="school_name" class="tj-field" required value="{{ tenant.name if tenant else '' }}" autocomplete="organization">
+                        </div>
+                        <div class="grid gap-5 md:grid-cols-2">
+                            <div>
+                                <label for="primary_color" class="mb-2 block text-sm font-bold text-slate-700">Primary Color</label>
+                                <input id="primary_color" name="primary_color" type="color" class="tj-field tj-color" value="{{ tenant.primary_color if tenant and tenant.primary_color else '#3498db' }}" required>
+                            </div>
+                            <div>
+                                <label for="secondary_color" class="mb-2 block text-sm font-bold text-slate-700">Secondary Color</label>
+                                <input id="secondary_color" name="secondary_color" type="color" class="tj-field tj-color" value="{{ tenant.secondary_color if tenant and tenant.secondary_color else '#2ecc71' }}" required>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                    <button type="button" class="tj-button tj-button-secondary" data-prev-step hidden>Back</button>
+                    <div class="flex flex-col gap-3 sm:ml-auto sm:flex-row">
+                        <a href="{{ url_for('auth.apply_admission') }}" class="tj-button tj-button-secondary">Admission</a>
+                        <button type="button" class="tj-button tj-button-primary" data-next-step>Continue</button>
+                        <button type="submit" class="tj-button tj-button-primary" data-submit-setup hidden>Complete Setup</button>
+                    </div>
+                </div>
+            </form>
+        </section>
     </section>
+    {% else %}
+    <section class="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+        <aside class="brand-gradient flex min-h-[520px] flex-col justify-between overflow-hidden rounded-lg p-7 text-white shadow-xl">
+            <div>
+                <img src="{{ tenant.logo_url if tenant and tenant.logo_url else url_for('static', filename='images/turnjoy.png') }}" alt="School Logo" class="h-20 w-20 rounded-full border-4 border-white/70 bg-white object-cover">
+                <p class="mt-8 text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Student & Staff Portal</p>
+                <h1 class="mt-3 text-4xl font-black leading-tight text-white">{{ tenant.name if tenant else tenant_domain or 'Turnjoy LMS' }}</h1>
+                <p class="mt-4 max-w-md text-base leading-7 text-white/80">Access classes, attendance, results, payments, admissions, and school communication from one branded portal.</p>
+            </div>
+            <div class="grid gap-3 text-sm text-white/82 sm:grid-cols-3">
+                <div class="rounded-lg border border-white/18 bg-white/12 p-4 font-semibold">Students</div>
+                <div class="rounded-lg border border-white/18 bg-white/12 p-4 font-semibold">Staff</div>
+                <div class="rounded-lg border border-white/18 bg-white/12 p-4 font-semibold">Parents</div>
+            </div>
+        </aside>
 
-    <div class="auth-grid">
-        <section class="auth-panel">
-            <h2>Sign In</h2>
-            <p>Access your school portal.</p>
-
-            <form method="POST" action="{{ url_for('auth.login') }}" class="auth-form">
-                <div class="form-group">
-                    <label for="login_email">Email Address</label>
-                    <input id="login_email" name="email" type="text" placeholder="name@school.edu" required autocomplete="username">
+        <section class="flex items-center rounded-lg border border-slate-200 bg-white p-6 shadow-xl md:p-8">
+            <div class="w-full">
+                <div class="mb-8">
+                    <p class="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">Welcome back</p>
+                    <h2 class="mt-2 text-3xl font-black text-slate-900">Sign in to your portal</h2>
+                    <p class="mt-2 text-slate-600">Use your email address or school-generated ID.</p>
                 </div>
 
-                <div class="form-group">
-                    <label for="login_password">Password</label>
-                    <input id="login_password" name="password" type="password" placeholder="Enter your password" required autocomplete="current-password">
-                </div>
-
-                <div class="auth-actions">
-                    <button type="submit" class="btn btn-primary">Sign In</button>
-                    <a href="{{ url_for('auth.forgot_id') }}" class="btn btn-secondary">Forgot School ID</a>
-                </div>
-            </form>
-        </section>
-
-        <section class="auth-panel">
-            <h2>Create Account</h2>
-            <p>Staff and parents can create portal access here. Students should apply for admission first.</p>
-
-            <form method="POST" action="{{ url_for('auth.signup') }}" class="auth-form">
-                <div class="form-group">
-                    <label for="name">Full Name</label>
-                    <input id="name" name="name" required autocomplete="name">
-                </div>
-
-                <div class="form-group">
-                    <label for="signup_email">Email Address</label>
-                    <input id="signup_email" name="email" type="email" required autocomplete="email">
-                </div>
-
-                <div class="form-group">
-                    <label for="signup_password">Password</label>
-                    <input id="signup_password" name="password" type="password" required autocomplete="new-password">
-                </div>
-
-                <div class="form-group">
-                    <label for="role">Account Type</label>
-                    <select id="role" name="role" required>
-                        {% if not admin_exists %}
-                        <option value="admin">School Admin</option>
-                        {% endif %}
-                        <option value="teacher">Teacher</option>
-                        <option value="attendant">Attendance Officer</option>
-                        <option value="parent">Parent / Guardian</option>
-                    </select>
-                </div>
-
-                <div class="parent-fields">
-                    <div class="form-group">
-                        <label for="phone">Phone</label>
-                        <input id="phone" name="phone" type="tel" autocomplete="tel">
+                <form method="POST" action="{{ url_for('auth.login') }}" class="space-y-5">
+                    <div>
+                        <label for="login_email" class="mb-2 block text-sm font-bold text-slate-700">Email Address or School ID</label>
+                        <input id="login_email" name="email" type="text" class="tj-field" placeholder="name@school.edu or SCH/ADM/2026/001" required autocomplete="username">
                     </div>
 
-                    <div class="form-group">
-                        <label for="address">Address</label>
-                        <input id="address" name="address" autocomplete="street-address">
+                    <div>
+                        <label for="login_password" class="mb-2 block text-sm font-bold text-slate-700">Password</label>
+                        <input id="login_password" name="password" type="password" class="tj-field" placeholder="Enter your password" required autocomplete="current-password">
                     </div>
-                </div>
 
-                {% if admin_exists %}
-                <p class="auth-note">
-                    Admin signup is closed because this school already has an admin. The admin can create more staff accounts from the dashboard.
-                </p>
-                {% endif %}
-
-                <div class="auth-actions">
-                    <button type="submit" class="btn btn-primary">Sign Up</button>
-                    <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-secondary">Apply For Admission</a>
-                </div>
-            </form>
+                    <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
+                        <button type="submit" class="tj-button tj-button-primary sm:min-w-36">Sign In</button>
+                        <a href="{{ url_for('auth.forgot_id') }}" class="tj-button tj-button-secondary">Forgot School ID</a>
+                        <a href="{{ url_for('auth.apply_admission') }}" class="tj-button tj-button-secondary">Admission</a>
+                    </div>
+                </form>
+            </div>
         </section>
-    </div>
+    </section>
+    {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if not admin_exists %}
+<script>
+    (function () {
+        const wizard = document.getElementById('setupWizard');
+        if (!wizard) return;
+
+        const steps = Array.from(wizard.querySelectorAll('[data-step]'));
+        const dots = Array.from(document.querySelectorAll('[data-step-dot]'));
+        const prevButton = wizard.querySelector('[data-prev-step]');
+        const nextButton = wizard.querySelector('[data-next-step]');
+        const submitButton = wizard.querySelector('[data-submit-setup]');
+        let currentStep = 0;
+
+        function setStep(index) {
+            currentStep = Math.max(0, Math.min(index, steps.length - 1));
+            steps.forEach((step, stepIndex) => {
+                step.classList.toggle('is-active', stepIndex === currentStep);
+            });
+            dots.forEach((dot, dotIndex) => {
+                dot.classList.toggle('is-active', dotIndex === currentStep);
+                dot.classList.toggle('is-complete', dotIndex < currentStep);
+            });
+            prevButton.hidden = currentStep === 0;
+            nextButton.hidden = currentStep === steps.length - 1;
+            submitButton.hidden = currentStep !== steps.length - 1;
+        }
+
+        function currentFieldsAreValid() {
+            const fields = Array.from(steps[currentStep].querySelectorAll('input, select, textarea'));
+            const password = wizard.querySelector('#admin_password');
+            const confirmPassword = wizard.querySelector('#confirm_password');
+            if (password && confirmPassword) {
+                confirmPassword.setCustomValidity(
+                    confirmPassword.value && password.value !== confirmPassword.value
+                        ? 'Passwords must match.'
+                        : ''
+                );
+            }
+            return fields.every((field) => field.reportValidity());
+        }
+
+        nextButton.addEventListener('click', function () {
+            if (currentFieldsAreValid()) setStep(currentStep + 1);
+        });
+
+        prevButton.addEventListener('click', function () {
+            setStep(currentStep - 1);
+        });
+
+        wizard.addEventListener('submit', function (event) {
+            const password = wizard.querySelector('#admin_password');
+            const confirmPassword = wizard.querySelector('#confirm_password');
+            if (password && confirmPassword && password.value !== confirmPassword.value) {
+                confirmPassword.setCustomValidity('Passwords must match.');
+                confirmPassword.reportValidity();
+                event.preventDefault();
+                return;
+            }
+            if (confirmPassword) confirmPassword.setCustomValidity('');
+        });
+
+        setStep(0);
+    })();
+</script>
+{% endif %}
 {% endblock %}
