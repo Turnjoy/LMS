@@ -71,7 +71,7 @@ def _marketing_domains(app):
         else:
             domains = configured
     else:
-        domains = ['turnjoy.com', 'www.turnjoy.com', 'turnjoy-lms.onrender.com', 'turnjoy-lms.up.railway.app']
+        domains = ['turnjoy.com', 'www.turnjoy.com', 'turnjoy-lms.onrender.com', 'turnjoy-lms.up.railway.app', 'turnjoylms.com.ng', 'www.turnjoylms.com.ng']
     normalized = {_normalize_host(domain) for domain in domains if domain}
     return normalized | {f'www.{domain}' for domain in normalized if not domain.startswith('www.')}
 
