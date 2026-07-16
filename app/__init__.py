@@ -1,6 +1,7 @@
 from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_login import LoginManager
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config
 from app.models import db, Tenant
 from urllib.parse import urlparse
@@ -210,6 +211,9 @@ def create_app(config_name='default'):
     """Application factory pattern for creating Flask app instances."""
     app = Flask(__name__)
     
+    # Configure Flask to trust upstream reverse proxy headers (e.g., Render)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1) # type: ignore
+    
     # Load configuration
     app.config.from_object(config[config_name])
     config[config_name].init_app(app)
@@ -268,7 +272,9 @@ def create_app(config_name='default'):
             return
 
         try:
-            # Check X-Forwarded-Host first so we read the real custom domain forwarded by Render proxy
+            # Output diagnostic logs to trace what domain hits Flask on Render
+            print(f"[PROXY DEBUG] Host: {request.headers.get('Host')} | X-Forwarded-Host: {request.headers.get('X-Forwarded-Host')} | request.host: {request.host}")
+
             raw_host = request.headers.get('X-Forwarded-Host') or request.headers.get('Host') or request.host
             host = _normalize_host(raw_host)
             g.current_domain = host
