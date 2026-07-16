@@ -268,7 +268,9 @@ def create_app(config_name='default'):
             return
 
         try:
-            host = _normalize_host(request.headers.get('Host') or request.host)
+            # Check X-Forwarded-Host first so we read the real custom domain forwarded by Render proxy
+            raw_host = request.headers.get('X-Forwarded-Host') or request.headers.get('Host') or request.host
+            host = _normalize_host(raw_host)
             g.current_domain = host
             tenant = None
             is_marketing_host = _is_marketing_host(app, host)
@@ -380,8 +382,6 @@ def create_app(config_name='default'):
         return render_template('base.html'), 500
     
     # Create database tables in development or testing only.
-    # Avoid creating tables automatically in production during app import/startup
-    # (platforms like Render should run migrations instead).
     if app.config.get('DEBUG') or app.config.get('TESTING'):
         with app.app_context():
             db.create_all()
