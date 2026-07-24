@@ -750,34 +750,62 @@ def setup_wizard():
         invited_users = []
         generated_classes = []
 
+        # Pre-load existing data for O(1) lookups instead of N database queries
+        existing_subjects = {
+            (s.class_level_id, s.name.lower()): s
+            for s in Subject.query.filter_by(tenant_id=g.current_tenant_id).all()
+        }
+        existing_class_subjects = {
+            (cs.class_id, cs.subject_id): cs
+            for cs in ClassSubject.query.filter_by(tenant_id=g.current_tenant_id).all()
+        }
+        existing_classes = {
+            c.name.lower(): c
+            for c in Class.query.filter_by(tenant_id=g.current_tenant_id).all()
+        }
+        existing_arms = {
+            (a.class_level_id, a.name): a
+            for a in ClassArm.query.filter_by(tenant_id=g.current_tenant_id).all()
+        }
+
+        # Collect new objects for bulk insertion
+        new_subjects = []
+        new_class_subjects = []
+        new_classes = []
+        new_arms = []
+
         for sort_order, (level_name, category) in enumerate(_base_class_levels_for_type(school_type), start=1):
             level, level_created = _get_or_create_class_level(level_name, category, sort_order)
             created_levels += int(level_created)
             bucket = _curriculum_bucket_for_level(level.name)
             subject_names = subjects_by_bucket.get(bucket) or []
 
+            # Batch subject creation - query memory instead of database
             for subject_name in subject_names:
-                subject = Subject.query.filter_by(
-                    tenant_id=g.current_tenant_id,
-                    class_level_id=level.id,
-                    name=subject_name
-                ).first()
-                if not subject:
+                subject_key = (level.id, subject_name.lower())
+                if subject_key not in existing_subjects:
                     subject = Subject(
                         tenant_id=g.current_tenant_id,
                         class_level_id=level.id,
                         name=subject_name
                     )
-                    db.session.add(subject)
-                    db.session.flush()
+                    new_subjects.append(subject)
+                    existing_subjects[subject_key] = subject
                     created_subjects += 1
 
             for arm_name in arms:
-                arm, arm_created = _get_or_create_class_arm(level, arm_name)
-                created_arms += int(arm_created)
+                arm_key = (level.id, arm_name)
+                if arm_key not in existing_arms:
+                    arm = ClassArm(tenant_id=g.current_tenant_id, class_level_id=level.id, name=arm_name)
+                    new_arms.append(arm)
+                    existing_arms[arm_key] = arm
+                    created_arms += 1
+                else:
+                    arm = existing_arms[arm_key]
+
                 class_name = _class_name_for_level_arm(level.name, arm.name)
-                class_obj = Class.query.filter_by(tenant_id=g.current_tenant_id, name=class_name).first()
-                if not class_obj:
+                class_key = class_name.lower()
+                if class_key not in existing_classes:
                     class_obj = Class(
                         tenant_id=g.current_tenant_id,
                         class_level_id=level.id,
@@ -786,21 +814,47 @@ def setup_wizard():
                         section=category,
                         arm=arm.name
                     )
-                    db.session.add(class_obj)
-                    db.session.flush()
+                    new_classes.append(class_obj)
+                    existing_classes[class_key] = class_obj
                     created_classes += 1
+                else:
+                    class_obj = existing_classes[class_key]
 
-                for subject in Subject.query.filter_by(tenant_id=g.current_tenant_id, class_level_id=level.id).all():
-                    _get_or_create_class_subject(class_obj.id, subject.id, is_required=True)
+                # Batch class-subject relationship creation - query memory instead of database
+                for subject in existing_subjects.values():
+                    if subject.class_level_id == level.id:
+                        cs_key = (class_obj.id, subject.id)
+                        if cs_key not in existing_class_subjects:
+                            class_subject = ClassSubject(
+                                tenant_id=g.current_tenant_id,
+                                class_id=class_obj.id,
+                                subject_id=subject.id,
+                                is_required=True
+                            )
+                            new_class_subjects.append(class_subject)
+                            existing_class_subjects[cs_key] = class_subject
 
                 generated_classes.append(class_obj)
+
+        # Bulk insert all new objects in a single transaction
+        db.session.add_all(new_subjects)
+        db.session.add_all(new_arms)
+        db.session.add_all(new_classes)
+        db.session.add_all(new_class_subjects)
+        db.session.flush()
+
+        # Now process teacher and student imports with optimized lookups
+        existing_emails = {
+            u.email.lower(): u
+            for u in User.query.filter_by(tenant_id=g.current_tenant_id).all()
+        }
 
         for row in teacher_rows:
             parts = [part.strip() for part in row.split(',')]
             if len(parts) < 2:
                 continue
             name, email = parts[0], parts[1].lower()
-            if not name or not email or User.query.filter_by(tenant_id=g.current_tenant_id, email=email).first():
+            if not name or not email or email in existing_emails:
                 continue
             password = generate_temporary_password()
             user = User(
@@ -815,6 +869,7 @@ def setup_wizard():
             ensure_custom_id(user, g.current_tenant, datetime.utcnow())
             user.set_password(password)
             db.session.add(user)
+            existing_emails[email] = user
             invited_users.append((email, password))
 
         class_lookup = {class_obj.name.lower(): class_obj for class_obj in generated_classes}
@@ -834,7 +889,7 @@ def setup_wizard():
             if len(parts) < 3:
                 continue
             name, email, class_name = parts[0], parts[1].lower(), parts[2].lower()
-            if not name or not email or User.query.filter_by(tenant_id=g.current_tenant_id, email=email).first():
+            if not name or not email or email in existing_emails:
                 continue
             password = generate_temporary_password()
             student = User(
@@ -850,6 +905,7 @@ def setup_wizard():
             student.set_password(password)
             db.session.add(student)
             db.session.flush()
+            existing_emails[email] = student
             class_obj = class_lookup.get(class_name)
             if class_obj:
                 db.session.add(StudentClass(
