@@ -166,6 +166,35 @@
             margin-top: 40px;
         }
         
+        .contact-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        
+        .contact-link {
+            color: rgba(255, 255, 255, 0.9);
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: opacity 0.2s;
+        }
+        
+        .contact-link:hover {
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 600px) {
+            .contact-links {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+        
         /* Flash messages */
         .flash-messages {
             margin-bottom: 20px;
@@ -242,6 +271,14 @@
     <footer class="footer">
         <div class="container">
             <p>&copy; {% if tenant_domain %}{{ tenant_domain }}{% else %}Turnjoy{% endif %} - All Rights Reserved</p>
+            <div class="contact-links">
+                <a href="mailto:support@turnjoylms.com.ng" class="contact-link">
+                    <span>✉️</span> support@turnjoylms.com.ng
+                </a>
+                <a href="https://wa.me/2349123363537?text=Hi,%20I%20need%20support%20with%20Turnjoy%20LMS" target="_blank" class="contact-link">
+                    <span>💬</span> WhatsApp Support
+                </a>
+            </div>
         </div>
     </footer>
     

@@ -24,6 +24,10 @@
         .grid { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
         .card { background: white; border-radius: 18px; padding: 24px; box-shadow: 0 14px 35px rgba(16, 45, 85, 0.06); }
         .footer { padding: 24px 0; text-align: center; font-size: 0.95rem; }
+        .contact-links { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-top: 12px; }
+        .contact-link { color: rgba(255, 255, 255, 0.9); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; transition: opacity 0.2s; }
+        .contact-link:hover { opacity: 0.8; }
+        @media (max-width: 600px) { .contact-links { flex-direction: column; gap: 8px; } }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -60,7 +64,17 @@
     {% block content %}{% endblock %}
 </main>
 <footer class="footer">
-    <div class="container">&copy; {{ now().year if now is defined else '2026' }} Turnjoy LMS. Built for multi-tenant school platforms.</div>
+    <div class="container">
+        <p>&copy; {{ now().year if now is defined else '2026' }} Turnjoy LMS. Built for multi-tenant school platforms.</p>
+        <div class="contact-links">
+            <a href="mailto:support@turnjoylms.com.ng" class="contact-link">
+                <span>✉️</span> support@turnjoylms.com.ng
+            </a>
+            <a href="https://wa.me/2349123363537?text=Hi,%20I%20need%20support%20with%20Turnjoy%20LMS" target="_blank" class="contact-link">
+                <span>💬</span> WhatsApp Support
+            </a>
+        </div>
+    </div>
 </footer>
 {% block extra_js %}{% endblock %}
 </body>
