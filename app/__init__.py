@@ -1,6 +1,7 @@
 from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_login import LoginManager
 from flask_migrate import Migrate
+from flask_mail import Mail
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config
@@ -10,6 +11,7 @@ import sys
 
 # Instantiate Migrate extension globally alongside SQLAlchemy
 migrate = Migrate()
+mail = Mail()
 
 
 def _normalize_host(host):
@@ -326,6 +328,7 @@ def create_app(config_name='default'):
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)  # <-- Binds Flask-Migrate to the app & db
+    mail.init_app(app)  # <-- Initialize Flask-Mail
     
     # Initialize Flask-Login
     login_manager = LoginManager()

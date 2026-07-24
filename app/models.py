@@ -1,11 +1,12 @@
 from datetime import datetime
-from flask import g, has_request_context
+from flask import g, has_request_context, current_app
 from flask_sqlalchemy import SQLAlchemy
 from flask_sqlalchemy.query import Query
 from flask_login import UserMixin
 from sqlalchemy.orm import synonym
 from sqlalchemy.ext.hybrid import hybrid_property
 from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer
 
 
 class TenantScopedQuery(Query):
@@ -396,6 +397,25 @@ class User(UserMixin, db.Model):
         if not self.password_hash:
             return False
         return check_password_hash(self.password_hash, password)
+
+    def get_reset_token(self, expires_sec=1800):
+        """Generate a password reset token with 30-minute expiration."""
+        serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+        return serializer.dumps(self.id, salt='password-reset-salt')
+
+    @staticmethod
+    def verify_reset_token(token, expires_sec=1800):
+        """Verify a password reset token and return the user if valid."""
+        serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+        try:
+            user_id = serializer.loads(
+                token,
+                salt='password-reset-salt',
+                max_age=expires_sec
+            )
+        except Exception:
+            return None
+        return User.query.get(user_id)
 
     @property
     def first_name(self):
