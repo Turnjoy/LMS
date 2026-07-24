@@ -820,7 +820,18 @@ def setup_wizard():
                 else:
                     class_obj = existing_classes[class_key]
 
-                # Batch class-subject relationship creation - query memory instead of database
+                generated_classes.append(class_obj)
+
+        # First flush Subjects, Arms, and Classes to get their IDs from PostgreSQL
+        db.session.add_all(new_subjects)
+        db.session.add_all(new_arms)
+        db.session.add_all(new_classes)
+        db.session.flush()
+
+        # Now create ClassSubject relationships using the assigned IDs
+        for class_obj in generated_classes:
+            level = ClassLevel.query.get(class_obj.class_level_id)
+            if level:
                 for subject in existing_subjects.values():
                     if subject.class_level_id == level.id:
                         cs_key = (class_obj.id, subject.id)
@@ -834,14 +845,8 @@ def setup_wizard():
                             new_class_subjects.append(class_subject)
                             existing_class_subjects[cs_key] = class_subject
 
-                generated_classes.append(class_obj)
-
-        # Bulk insert all new objects in a single transaction
-        db.session.add_all(new_subjects)
-        db.session.add_all(new_arms)
-        db.session.add_all(new_classes)
+        # Add ClassSubject relationships and commit
         db.session.add_all(new_class_subjects)
-        db.session.flush()
 
         # Now process teacher and student imports with optimized lookups
         existing_emails = {
