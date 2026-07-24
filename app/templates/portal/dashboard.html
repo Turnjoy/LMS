@@ -128,7 +128,8 @@
         <a href="{{ url_for('admin.setup_wizard') }}" class="btn btn-primary">Guided Setup</a>
         <a href="{{ url_for('admin.class_subjects') }}" class="btn btn-secondary">Class Subjects</a>
         <a href="{{ url_for('admin.teacher_assignments') }}" class="btn btn-primary">Teacher Assignments</a>
-        <a href="{{ url_for('admin.admissions') }}" class="btn btn-primary">Admissions</a>
+        <a href="{{ url_for('admin.admissions') }}" class="btn btn-primary">Application Desk</a>
+        <a href="{{ url_for('admin.studio') }}" class="btn btn-secondary">Turnjoy Studio</a>
         <a href="{{ url_for('admin.payments') }}" class="btn btn-secondary">Payments</a>
         <a href="{{ url_for('admin.bulk_onboarding') }}" class="btn btn-primary">Bulk Onboarding</a>
     </div>
@@ -153,7 +154,7 @@
     </div>
     <div class="stat-card">
         <h3>{{ stats.pending_admissions if stats else 0 }}</h3>
-        <p>Pending Admissions</p>
+        <p>Pending Applications</p>
     </div>
 </div>
 
@@ -162,6 +163,7 @@
     <h2>Teacher Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('results.dashboard') }}" class="btn btn-primary">Results Workspace</a>
+        <a href="{{ url_for('admin.studio') }}" class="btn btn-secondary">Turnjoy Studio</a>
         <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
@@ -207,6 +209,7 @@
     <h2>Student Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('auth.student_term_registration') }}" class="btn btn-secondary">Student Registration</a>
+        <a href="{{ url_for('auth.course_library') }}" class="btn btn-primary">My Courses</a>
         <a href="{{ url_for('results.get_student_results', student_id=current_user.id) }}" class="btn btn-primary">My Results</a>
         <a href="{{ url_for('attendance.get_student_attendance', student_id=current_user.id) }}" class="btn btn-secondary">My Attendance</a>
         {% if student_enrollments %}
@@ -266,7 +269,7 @@
 <div class="quick-actions">
     <h2>Parent Quick Actions</h2>
     <div class="action-buttons">
-        <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-primary">Apply For Admission</a>
+        <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-primary">Apply to Join</a>
         <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
@@ -296,7 +299,7 @@
     <h2>School Features</h2>
     <div class="module-list">
         <div class="module-item">
-            <h3>Admissions</h3>
+            <h3>Application Desk</h3>
             <p>Collect applications, review them, and create student accounts after acceptance.</p>
         </div>
         <div class="module-item">

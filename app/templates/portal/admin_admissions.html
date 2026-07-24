@@ -1,60 +1,224 @@
 {% extends "base.html" %}
 
-{% block title %}Admissions - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+{% block title %}Application Desk - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
 
-{% block content %}
-<div class="card">
-    <h1>Admission Applications</h1>
-    <p style="color: #666; margin-top: 8px;">Accepting an application creates the student portal account. Rejecting it does not.</p>
-</div>
+{% block extra_css %}
+<style>
+    .desk-header {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        border-radius: 8px;
+        color: #fff;
+        padding: 26px;
+        margin-bottom: 20px;
+    }
 
-{% for application in applications %}
-<div class="card">
+    .desk-header h1,
+    .desk-header p {
+        color: #fff;
+    }
+
+    .desk-tabs {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }
+
+    .desk-tab {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--text-color);
+        cursor: pointer;
+        font-weight: 700;
+        padding: 11px 16px;
+    }
+
+    .desk-tab.is-active {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+        color: #fff;
+    }
+
+    .desk-panel {
+        display: none;
+    }
+
+    .desk-panel.is-active {
+        display: block;
+    }
+
+    .application-card {
+        border-left: 4px solid var(--primary-color);
+    }
+
+    .application-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 10px;
+        margin: 14px 0;
+    }
+
+    .application-meta p {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 0;
+    }
+
+    .review-actions {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.7fr);
+        gap: 14px;
+        margin-top: 16px;
+    }
+
+    .approve-button {
+        background: #16a34a;
+        color: #fff;
+    }
+
+    .decline-button {
+        background: #dc2626;
+        color: #fff;
+    }
+
+    .empty-state {
+        color: #666;
+        padding: 20px 0;
+    }
+
+    @media (max-width: 760px) {
+        .review-actions {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% macro application_card(application, role) %}
+<div class="card application-card">
     <h2>{{ application.applicant_name }}</h2>
-    <p><strong>Status:</strong> {{ application.status }}</p>
-    <p><strong>Class:</strong> {{ application.requested_class.name if application.requested_class else 'Not selected' }}</p>
-    <p><strong>Parent:</strong> {{ application.parent_name }} | {{ application.parent_email }} | {{ application.parent_phone }}</p>
-    {% if application.previous_school %}<p><strong>Previous School:</strong> {{ application.previous_school }}</p>{% endif %}
+    <p style="color: #666; margin-top: 4px;">
+        Submitted {{ application.created_at.strftime('%Y-%m-%d') if application.created_at else 'recently' }}
+        {% if application.created_user %} | Pending ID: {{ application.created_user.custom_id }}{% endif %}
+    </p>
+
+    <div class="application-meta">
+        <p><strong>Status:</strong> {{ application.status|title }}</p>
+        {% if role == 'student' %}
+        <p><strong>Class Level:</strong> {{ application.requested_class.name if application.requested_class else 'Not selected' }}</p>
+        <p><strong>Parent Phone:</strong> {{ application.parent_phone or 'Not provided' }}</p>
+        {% if application.parent_name %}<p><strong>Parent:</strong> {{ application.parent_name }}</p>{% endif %}
+        {% elif role == 'teacher' %}
+        <p><strong>Email:</strong> {{ application.applicant_email or 'Not provided' }}</p>
+        <p><strong>Phone:</strong> {{ application.applicant_phone or 'Not provided' }}</p>
+        <p><strong>Subjects:</strong>
+            {% for subject_id in application.requested_subject_ids or [] %}
+                {{ subject_map.get(subject_id).name if subject_map.get(subject_id) else 'Subject #' ~ subject_id }}{% if not loop.last %}, {% endif %}
+            {% else %}
+                None selected
+            {% endfor %}
+        </p>
+        {% elif role == 'parent' %}
+        <p><strong>Phone:</strong> {{ application.applicant_phone or application.parent_phone or 'Not provided' }}</p>
+        <p><strong>Children:</strong> {{ application.child_lookup or 'Not provided' }}</p>
+        {% endif %}
+    </div>
+
     {% if application.notes %}<p><strong>Notes:</strong> {{ application.notes }}</p>{% endif %}
+    {% if application.admin_note and application.status != 'pending' %}<p><strong>Admin Note:</strong> {{ application.admin_note }}</p>{% endif %}
 
     {% if application.status == 'pending' %}
-    <form method="POST" action="{{ url_for('admin.review_admission', application_id=application.id, action='accept') }}" style="margin-top: 18px;">
-        <div class="form-group">
-            <label for="student_email_{{ application.id }}">Student Login Email</label>
-            <input id="student_email_{{ application.id }}" name="student_email" type="email" value="{{ application.parent_email }}">
-        </div>
-        <div class="form-group">
-            <label for="temporary_password_{{ application.id }}">Temporary Password</label>
-            <input id="temporary_password_{{ application.id }}" name="temporary_password" value="student123">
-        </div>
-        <div class="form-group">
-            <label for="class_id_{{ application.id }}">Approved Class</label>
-            <select id="class_id_{{ application.id }}" name="class_id">
-                {% for class_obj in classes %}
-                <option value="{{ class_obj.id }}" {% if application.requested_class_id == class_obj.id %}selected{% endif %}>{{ class_obj.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <input type="hidden" name="term_id" value="{{ active_term.id if active_term else '' }}">
-        <div class="form-group">
-            <label for="amount_due_{{ application.id }}">Term Fee Due</label>
-            <input id="amount_due_{{ application.id }}" name="amount_due" type="number" min="0" step="0.01" value="0">
-        </div>
-        <button type="submit" class="btn btn-primary">Accept And Create Student</button>
-    </form>
+    <div class="review-actions">
+        <form method="POST" action="{{ url_for('admin.review_admission', application_id=application.id, action='approve') }}">
+            {% if role == 'student' %}
+            <div class="form-group">
+                <label for="class_id_{{ application.id }}">Approved Class</label>
+                <select id="class_id_{{ application.id }}" name="class_id" required>
+                    <option value="">Select class</option>
+                    {% for class_obj in classes %}
+                    <option value="{{ class_obj.id }}" {% if application.requested_class_id == class_obj.id %}selected{% endif %}>{{ class_obj.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="amount_due_{{ application.id }}">Term Fee Due</label>
+                <input id="amount_due_{{ application.id }}" name="amount_due" type="number" min="0" step="0.01" value="0">
+            </div>
+            {% elif role == 'teacher' %}
+            <p style="color: #666;">Approval creates subject-class assignments for the active term wherever these subjects are configured.</p>
+            {% elif role == 'parent' %}
+            <p style="color: #666;">Approval links this parent account to matching child student records by ID or exact name.</p>
+            {% endif %}
+            <button type="submit" class="btn approve-button">Approve</button>
+        </form>
 
-    <form method="POST" action="{{ url_for('admin.review_admission', application_id=application.id, action='reject') }}" style="margin-top: 12px;">
-        <div class="form-group">
-            <label for="admin_note_{{ application.id }}">Rejection Note</label>
-            <textarea id="admin_note_{{ application.id }}" name="admin_note"></textarea>
-        </div>
-        <button type="submit" class="btn btn-secondary">Reject Application</button>
-    </form>
+        <form method="POST" action="{{ url_for('admin.review_admission', application_id=application.id, action='decline') }}">
+            <div class="form-group">
+                <label for="admin_note_{{ application.id }}">Decline Note</label>
+                <textarea id="admin_note_{{ application.id }}" name="admin_note" rows="3"></textarea>
+            </div>
+            <button type="submit" class="btn decline-button">Decline</button>
+        </form>
+    </div>
     {% endif %}
 </div>
-{% else %}
-<div class="card">
-    <p>No admission applications found.</p>
+{% endmacro %}
+
+{% block content %}
+<section class="desk-header">
+    <p style="font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.82;">Admin Workflow</p>
+    <h1>Application Desk</h1>
+    <p style="margin-top: 8px;">Review pending students, teachers, and parents from one workspace.</p>
+</section>
+
+<div class="desk-tabs" role="tablist">
+    <button type="button" class="desk-tab is-active" data-tab-target="students">Pending Students ({{ pending_students|length }})</button>
+    <button type="button" class="desk-tab" data-tab-target="teachers">Pending Teachers ({{ pending_teachers|length }})</button>
+    <button type="button" class="desk-tab" data-tab-target="parents">Pending Parents ({{ pending_parents|length }})</button>
 </div>
-{% endfor %}
+
+<section class="desk-panel is-active" data-tab-panel="students">
+    {% for application in pending_students %}
+        {{ application_card(application, 'student') }}
+    {% else %}
+    <div class="card"><p class="empty-state">No pending student applications.</p></div>
+    {% endfor %}
+</section>
+
+<section class="desk-panel" data-tab-panel="teachers">
+    {% for application in pending_teachers %}
+        {{ application_card(application, 'teacher') }}
+    {% else %}
+    <div class="card"><p class="empty-state">No pending teacher applications.</p></div>
+    {% endfor %}
+</section>
+
+<section class="desk-panel" data-tab-panel="parents">
+    {% for application in pending_parents %}
+        {{ application_card(application, 'parent') }}
+    {% else %}
+    <div class="card"><p class="empty-state">No pending parent applications.</p></div>
+    {% endfor %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const tabs = Array.from(document.querySelectorAll('[data-tab-target]'));
+        const panels = Array.from(document.querySelectorAll('[data-tab-panel]'));
+        tabs.forEach((tab) => {
+            tab.addEventListener('click', function () {
+                const target = tab.dataset.tabTarget;
+                tabs.forEach((item) => item.classList.toggle('is-active', item === tab));
+                panels.forEach((panel) => {
+                    panel.classList.toggle('is-active', panel.dataset.tabPanel === target);
+                });
+            });
+        });
+    })();
+</script>
 {% endblock %}

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Turnjoy Studio - {{ tenant_domain or 'School LMS' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .studio-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.8fr) minmax(320px, 1.2fr);
+        gap: 20px;
+    }
+
+    .lesson-row {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 14px;
+        margin-top: 12px;
+        background: #fff;
+    }
+
+    @media (max-width: 820px) {
+        .studio-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Turnjoy Studio</h1>
+    <p style="color: #666; margin-top: 8px;">Manage courses and embedded video lessons for learners.</p>
+</div>
+
+<div class="studio-grid">
+    <section class="card">
+        <h2>Create Course</h2>
+        <form method="POST" action="{{ url_for('admin.studio') }}">
+            <input type="hidden" name="action" value="course">
+            <div class="form-group">
+                <label for="title">Course Title</label>
+                <input id="title" name="title" required>
+            </div>
+            <div class="form-group">
+                <label for="outline">Outline</label>
+                <textarea id="outline" name="outline" rows="5"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="price">Price</label>
+                <input id="price" name="price" type="number" min="0" step="0.01" value="0">
+            </div>
+            <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
+                <input type="checkbox" name="is_active" checked>
+                Active on storefront
+            </label>
+            <button type="submit" class="btn btn-primary">Save Course</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Add Video Lesson</h2>
+        <form method="POST" action="{{ url_for('admin.studio') }}">
+            <input type="hidden" name="action" value="lesson">
+            <div class="form-group">
+                <label for="course_id">Course</label>
+                <select id="course_id" name="course_id" required>
+                    <option value="">Select course</option>
+                    {% for course in courses %}
+                    <option value="{{ course.id }}">{{ course.title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="lesson_title">Lesson Title</label>
+                <input id="lesson_title" name="lesson_title" required>
+            </div>
+            <div class="form-group">
+                <label for="embedded_url">Video Link or Embed URL</label>
+                <input id="embedded_url" name="embedded_url" required placeholder="YouTube, Vimeo, or Google Drive link">
+            </div>
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" name="description" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="sort_order">Order</label>
+                <input id="sort_order" name="sort_order" type="number" value="0">
+            </div>
+            <button type="submit" class="btn btn-primary">Add Lesson</button>
+        </form>
+    </section>
+</div>
+
+{% for course in courses %}
+<section class="card">
+    <h2>{{ course.title }}</h2>
+    <p style="color: #666;">{{ course.outline or 'No outline yet.' }}</p>
+    <p><strong>Price:</strong> {{ 'NGN %.2f'|format(course.price or 0) }} | <strong>Status:</strong> {{ 'Active' if course.is_active else 'Hidden' }}</p>
+
+    {% for lesson in lessons_by_course.get(course.id, []) %}
+    <div class="lesson-row">
+        <form method="POST" action="{{ url_for('admin.studio') }}">
+            <input type="hidden" name="action" value="lesson_update">
+            <input type="hidden" name="course_id" value="{{ course.id }}">
+            <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
+            <div class="form-group">
+                <label for="lesson_title_{{ lesson.id }}">Lesson Title</label>
+                <input id="lesson_title_{{ lesson.id }}" name="lesson_title" value="{{ lesson.title }}" required>
+            </div>
+            <div class="form-group">
+                <label for="embedded_url_{{ lesson.id }}">Embed URL</label>
+                <input id="embedded_url_{{ lesson.id }}" name="embedded_url" value="{{ lesson.embedded_url }}" required>
+            </div>
+            <div class="form-group">
+                <label for="description_{{ lesson.id }}">Description</label>
+                <textarea id="description_{{ lesson.id }}" name="description" rows="2">{{ lesson.description or '' }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="sort_order_{{ lesson.id }}">Order</label>
+                <input id="sort_order_{{ lesson.id }}" name="sort_order" type="number" value="{{ lesson.sort_order or 0 }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Save Lesson</button>
+        </form>
+        <form method="POST" action="{{ url_for('admin.delete_lesson', lesson_id=lesson.id) }}" style="margin-top: 10px;">
+            <button type="submit" class="btn btn-secondary">Delete Lesson</button>
+        </form>
+    </div>
+    {% else %}
+    <p style="color: #666; margin-top: 10px;">No lessons yet.</p>
+    {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}

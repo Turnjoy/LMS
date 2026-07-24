@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.title }} - {{ tenant_domain or 'School LMS' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .lesson-player {
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #0f172a;
+        margin-top: 14px;
+    }
+
+    .lesson-player iframe {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        border: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{{ course.title }}</h1>
+    <p style="color: #666; margin-top: 8px; white-space: pre-line;">{{ course.outline or '' }}</p>
+</div>
+
+{% for lesson in lessons %}
+<section class="card">
+    <h2>{{ lesson.title }}</h2>
+    {% if lesson.description %}<p style="color: #666; margin-top: 6px;">{{ lesson.description }}</p>{% endif %}
+    <div class="lesson-player">
+        <iframe
+            src="{{ lesson.embedded_url }}"
+            title="{{ lesson.title }}"
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>
+</section>
+{% else %}
+<section class="card">
+    <p style="color: #666;">No lessons have been added yet.</p>
+</section>
+{% endfor %}
+{% endblock %}

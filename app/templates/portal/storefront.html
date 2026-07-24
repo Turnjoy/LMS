@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tenant.name if tenant else 'Course Storefront' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .store-hero {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        color: #fff;
+        border-radius: 8px;
+        padding: 30px;
+        margin-bottom: 22px;
+    }
+
+    .store-hero h1,
+    .store-hero p {
+        color: #fff;
+    }
+
+    .course-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 18px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="store-hero">
+    <p style="font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;">Turnjoy Marketplace</p>
+    <h1>{{ tenant.name if tenant else 'Course Storefront' }}</h1>
+    <p style="margin-top: 8px;">Browse active courses, review the outline, and unlock your learner dashboard after checkout.</p>
+</section>
+
+<div class="course-grid">
+    {% for course in courses %}
+    <article class="card">
+        <h2>{{ course.title }}</h2>
+        <p style="color: #666; margin-top: 8px; white-space: pre-line;">{{ course.outline or 'Course outline coming soon.' }}</p>
+        <p style="font-size: 1.3rem; font-weight: 800; margin: 12px 0;">NGN {{ '%.2f'|format(course.price or 0) }}</p>
+        <form method="POST" action="{{ url_for('public.buy_course', course_id=course.id) }}">
+            <div class="form-group">
+                <label for="buyer_name_{{ course.id }}">Full Name</label>
+                <input id="buyer_name_{{ course.id }}" name="buyer_name" required autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label for="buyer_email_{{ course.id }}">Email</label>
+                <input id="buyer_email_{{ course.id }}" name="buyer_email" type="email" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label for="buyer_phone_{{ course.id }}">Phone</label>
+                <input id="buyer_phone_{{ course.id }}" name="buyer_phone" autocomplete="tel">
+            </div>
+            <button type="submit" class="btn btn-primary">Buy Course</button>
+        </form>
+    </article>
+    {% else %}
+    <section class="card">
+        <h2>No active courses yet</h2>
+        <p style="color: #666;">Published courses will appear here.</p>
+    </section>
+    {% endfor %}
+</div>
+{% endblock %}

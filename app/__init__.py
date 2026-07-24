@@ -1,11 +1,15 @@
 from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from flask_login import LoginManager
+from flask_migrate import Migrate
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config
 from app.models import db, Tenant
 from urllib.parse import urlparse
 import sys
+
+# Instantiate Migrate extension globally alongside SQLAlchemy
+migrate = Migrate()
 
 
 def _normalize_host(host):
@@ -55,7 +59,6 @@ def _is_school_lockout_required(tenant):
 
 def _marketing_domains(app):
     """Retrieve and consolidate all recognized marketing domains."""
-    # These base domains must ALWAYS bypass tenant routing checks
     base_domains = [
         'turnjoy.com', 
         'www.turnjoy.com', 
@@ -66,7 +69,6 @@ def _marketing_domains(app):
         'turnjoy-lms.up.railway.app'
     ]
     
-    # Safely merge env variables if set without overriding our hardcoded safety domains
     configured = app.config.get('MARKETING_DOMAINS')
     if configured:
         if isinstance(configured, str):
@@ -94,13 +96,11 @@ def _subdomain_from_host(host, app):
     if host.endswith('.localhost'):
         return host.split('.')[0]
 
-    # If the host itself is registered as a root marketing domain, it has no tenant subdomain
     if _is_marketing_host(app, host):
         return None
 
     parts = host.split('.')
     
-    # Handle custom domain suffixing (e.g., school.turnjoylms.com.ng matches turnjoylms.com.ng)
     for marketing_domain in _marketing_domains(app):
         if host.endswith(f".{marketing_domain}"):
             subdomain_part = host[:-len(marketing_domain) - 1]
@@ -108,7 +108,6 @@ def _subdomain_from_host(host, app):
                 return subdomain_part
 
     if len(parts) >= 3:
-        # Fallback check: only return subdomain if the main domain isn't our root marketing domain
         root_candidate = ".".join(parts[1:])
         if root_candidate in _marketing_domains(app):
             return parts[0]
@@ -181,6 +180,9 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
         if 'billing_type' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN billing_type VARCHAR(20) NOT NULL DEFAULT 'school_pay'")
+        if 'tenant_type' not in tenant_columns:
+            connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(30) NOT NULL DEFAULT 'formal_school'")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_tenants_tenant_type ON tenants (tenant_type)")
         if 'setup_completed' not in tenant_columns:
             connection.exec_driver_sql("ALTER TABLE tenants ADD COLUMN setup_completed BOOLEAN NOT NULL DEFAULT 0")
         if 'sections' not in tenant_columns:
@@ -230,10 +232,82 @@ def _ensure_runtime_schema():
             connection.exec_driver_sql("ALTER TABLE assignment_submissions ADD COLUMN client_sync_id VARCHAR(120)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_assignment_submissions_client_sync_id ON assignment_submissions (client_sync_id)")
 
+        admission_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(admission_applications)").fetchall()]
+        if admission_columns:
+            if 'applicant_role' not in admission_columns:
+                connection.exec_driver_sql("ALTER TABLE admission_applications ADD COLUMN applicant_role VARCHAR(20) NOT NULL DEFAULT 'student'")
+                connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_admission_applications_applicant_role ON admission_applications (applicant_role)")
+            if 'applicant_email' not in admission_columns:
+                connection.exec_driver_sql("ALTER TABLE admission_applications ADD COLUMN applicant_email VARCHAR(120)")
+                connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_admission_applications_applicant_email ON admission_applications (applicant_email)")
+            if 'applicant_phone' not in admission_columns:
+                connection.exec_driver_sql("ALTER TABLE admission_applications ADD COLUMN applicant_phone VARCHAR(30)")
+            if 'requested_subject_ids' not in admission_columns:
+                connection.exec_driver_sql("ALTER TABLE admission_applications ADD COLUMN requested_subject_ids JSON")
+            if 'child_lookup' not in admission_columns:
+                connection.exec_driver_sql("ALTER TABLE admission_applications ADD COLUMN child_lookup TEXT")
+            if 'created_user_id' not in admission_columns:
+                connection.exec_driver_sql("ALTER TABLE admission_applications ADD COLUMN created_user_id INTEGER REFERENCES users(id)")
+
         subject_columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(subjects)").fetchall()]
         if 'class_level_id' not in subject_columns:
             connection.exec_driver_sql("ALTER TABLE subjects ADD COLUMN class_level_id INTEGER REFERENCES class_levels(id)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_subjects_class_level_id ON subjects (class_level_id)")
+
+        connection.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS courses (
+                id INTEGER PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+                title VARCHAR(160) NOT NULL,
+                outline TEXT,
+                price FLOAT DEFAULT 0.0,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_by INTEGER REFERENCES users(id),
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        """)
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_courses_tenant_id ON courses (tenant_id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_courses_is_active ON courses (is_active)")
+        connection.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS lesson_videos (
+                id INTEGER PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+                course_id INTEGER NOT NULL REFERENCES courses(id),
+                title VARCHAR(160) NOT NULL,
+                description TEXT,
+                embedded_url VARCHAR(500) NOT NULL,
+                sort_order INTEGER DEFAULT 0,
+                created_by INTEGER REFERENCES users(id),
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        """)
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_lesson_videos_tenant_id ON lesson_videos (tenant_id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_lesson_videos_course_id ON lesson_videos (course_id)")
+        connection.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS course_purchases (
+                id INTEGER PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+                course_id INTEGER NOT NULL REFERENCES courses(id),
+                student_id INTEGER REFERENCES users(id),
+                buyer_name VARCHAR(120) NOT NULL,
+                buyer_email VARCHAR(120) NOT NULL,
+                buyer_phone VARCHAR(30),
+                amount FLOAT DEFAULT 0.0,
+                currency VARCHAR(10) DEFAULT 'NGN',
+                status VARCHAR(30) NOT NULL DEFAULT 'pending',
+                payment_reference VARCHAR(120),
+                raw_payload JSON,
+                created_at DATETIME,
+                completed_at DATETIME
+            )
+        """)
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_course_purchases_tenant_id ON course_purchases (tenant_id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_course_purchases_course_id ON course_purchases (course_id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_course_purchases_buyer_email ON course_purchases (buyer_email)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_course_purchases_status ON course_purchases (status)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_course_purchases_payment_reference ON course_purchases (payment_reference)")
 
         connection.commit()
 
@@ -251,6 +325,7 @@ def create_app(config_name='default'):
     
     # Initialize extensions
     db.init_app(app)
+    migrate.init_app(app, db)  # <-- Binds Flask-Migrate to the app & db
     
     # Initialize Flask-Login
     login_manager = LoginManager()
@@ -310,8 +385,8 @@ def create_app(config_name='default'):
             is_marketing_host = _is_marketing_host(app, host)
             is_master_path = request.path.startswith('/turnjoy-master-admin') or request.path.startswith('/_master_hq_2026')
             marketing_only_paths = {'/', '/about', '/pricing', '/contact', '/apply', '/admin'}
+            tenant_marketing_paths = {'/about', '/pricing', '/contact', '/apply'}
 
-            # --- VERBOSE DIAGNOSTIC LOGGING ---
             print(f"[ROUTING LOG] Raw Host: '{raw_host}' | Normalized Host: '{host}' | Is Marketing Host: {is_marketing_host}")
 
             if is_master_path and not is_marketing_host:
@@ -372,7 +447,10 @@ def create_app(config_name='default'):
                     print(f"[ROUTING LOG] Setup wizard redirecting active admin.")
                     return redirect(url_for('auth.setup_wizard_redirect'))
 
-                if request.path == '/':
+                if request.path in tenant_marketing_paths:
+                    return redirect(url_for('public.index'))
+
+                if request.path == '/' and getattr(tenant, 'tenant_type', 'formal_school') == 'formal_school':
                     from app.models import User
                     local_admin_roles = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
                     admin_exists = User.query.filter(
@@ -425,17 +503,21 @@ def create_app(config_name='default'):
     # Error handlers
     @app.errorhandler(404)
     def not_found(error):
+        if getattr(g, 'current_tenant', None):
+            return render_template('portal/error.html', error_code=404, error_title='Page not found'), 404
         return render_template('base.html'), 404
     
     @app.errorhandler(500)
     def internal_error(error):
         db.session.rollback()
+        if getattr(g, 'current_tenant', None):
+            return render_template('portal/error.html', error_code=500, error_title='Something went wrong'), 500
         return render_template('base.html'), 500
     
     # Create database tables in development or testing only.
     if app.config.get('DEBUG') or app.config.get('TESTING'):
         with app.app_context():
-            db.create_all()
+            # db.create_all()
             _ensure_runtime_schema()
     
     return app

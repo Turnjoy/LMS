@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from app import create_app, db
 from app.models import Tenant, User, Class, Subject, Term
 from werkzeug.security import generate_password_hash

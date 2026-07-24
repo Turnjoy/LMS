@@ -1,5 +1,6 @@
 import hmac
 import re
+from datetime import datetime
 from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, render_template, request, redirect, url_for, flash, abort, g, jsonify, session
@@ -18,6 +19,8 @@ from app.models import (
     ClassArm,
     ClassLevel,
     ClassSubject,
+    Course,
+    CoursePurchase,
     FeeCategory,
     FeeInstallmentMilestone,
     FeeInstallmentPlan,
@@ -148,6 +151,63 @@ def _ensure_school_initialization(tenant):
         ))
 
 
+def _complete_course_purchase(course, buyer_name, buyer_email, buyer_phone=None):
+    user = User.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        email=buyer_email,
+        role='student'
+    ).first()
+    temporary_password = None
+    if not user:
+        from app.auth_utils import generate_temporary_password
+
+        temporary_password = generate_temporary_password()
+        user = User(
+            tenant_id=g.current_tenant_id,
+            name=buyer_name,
+            email=buyer_email,
+            phone_number=buyer_phone or None,
+            role='student',
+            is_approved=True,
+            is_first_login=True,
+            payment_status='paid',
+        )
+        ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+        user.set_password(temporary_password)
+        db.session.add(user)
+        db.session.flush()
+    else:
+        user.is_approved = True
+        user.is_active = True
+        user.payment_status = 'paid'
+
+    purchase = CoursePurchase.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        course_id=course.id,
+        student_id=user.id,
+        status='completed'
+    ).first()
+    if not purchase:
+        purchase = CoursePurchase(
+            tenant_id=g.current_tenant_id,
+            course_id=course.id,
+            student_id=user.id,
+            buyer_name=buyer_name,
+            buyer_email=buyer_email,
+            buyer_phone=buyer_phone or None,
+            amount=course.price or 0,
+            currency='NGN',
+            status='completed',
+            payment_reference=f'TJ-{course.id}-{int(datetime.utcnow().timestamp())}',
+            raw_payload={'source': 'local_checkout_framework'},
+            completed_at=datetime.utcnow(),
+        )
+        db.session.add(purchase)
+
+    db.session.commit()
+    return user, purchase, temporary_password
+
+
 def _delete_school_tree(tenant):
     tenant_id = tenant.id
     for model in [
@@ -160,6 +220,9 @@ def _delete_school_tree(tenant):
         FeeInstallmentPlan,
         FeeCategory,
         PaymentTransaction,
+        CoursePurchase,
+        LessonVideo,
+        Course,
         AdmissionApplication,
         AssignmentSubmission,
         CBTQuestion,
@@ -245,6 +308,12 @@ def _master_dashboard_context():
 @public_bp.route('/')
 def index():
     if getattr(g, 'current_tenant', None):
+        if getattr(g.current_tenant, 'tenant_type', 'formal_school') == 'course_creator':
+            courses = Course.query.filter_by(
+                tenant_id=g.current_tenant_id,
+                is_active=True
+            ).order_by(Course.created_at.desc()).all()
+            return render_template('portal/storefront.html', courses=courses)
         profile = g.current_tenant.public_profile
         classes = None
         from app.models import Class
@@ -252,6 +321,34 @@ def index():
         return render_template('portal/landing.html', profile=profile, classes=classes)
 
     return render_template('public/index.html')
+
+
+@public_bp.route('/courses/<int:course_id>/buy', methods=['POST'])
+def buy_course(course_id):
+    if not getattr(g, 'current_tenant', None):
+        abort(404)
+    if getattr(g.current_tenant, 'tenant_type', 'formal_school') != 'course_creator':
+        abort(404)
+
+    course = Course.query.filter_by(
+        id=course_id,
+        tenant_id=g.current_tenant_id,
+        is_active=True
+    ).first_or_404()
+    buyer_name = (request.form.get('buyer_name') or '').strip()
+    buyer_email = (request.form.get('buyer_email') or '').strip().lower()
+    buyer_phone = (request.form.get('buyer_phone') or '').strip()
+    if not buyer_name or not buyer_email:
+        flash('Name and email are required to buy this course.', 'error')
+        return redirect(url_for('public.index'))
+
+    user, purchase, temporary_password = _complete_course_purchase(course, buyer_name, buyer_email, buyer_phone)
+    login_user(user)
+    if temporary_password:
+        flash(f'Course unlocked. Your student ID is {user.custom_id}; temporary password: {temporary_password}', 'success')
+    else:
+        flash('Course unlocked on your existing student profile.', 'success')
+    return redirect(url_for('auth.course_detail', course_id=course.id))
 
 
 @public_bp.route('/about')
@@ -276,6 +373,8 @@ def apply_school():
     if request.method == 'POST':
         school_name = (request.form.get('school_name') or '').strip()
         desired_subdomain = _normalize_subdomain(request.form.get('subdomain'))
+        custom_domain = _normalize_application_website(request.form.get('custom_domain'))
+        tenant_type = (request.form.get('tenant_type') or 'formal_school').strip()
         admin_name = (request.form.get('admin_name') or '').strip()
         admin_email = (request.form.get('admin_email') or '').strip().lower()
         admin_password = request.form.get('admin_password') or ''
@@ -289,10 +388,14 @@ def apply_school():
         if not re.match(r'^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$', desired_subdomain):
             flash('Use a valid subdomain with letters, numbers, and hyphens only.', 'error')
             return render_template('public/apply.html'), 400
+        if tenant_type not in ('formal_school', 'course_creator'):
+            flash('Choose Formal School or Course Creator.', 'error')
+            return render_template('public/apply.html'), 400
 
         existing = Tenant.query.filter(
             or_(
                 Tenant.subdomain == desired_subdomain,
+                Tenant.custom_domain == custom_domain if custom_domain else False,
                 Tenant.application_contact_email == admin_email,
             )
         ).first()
@@ -304,6 +407,8 @@ def apply_school():
         tenant = Tenant(
             name=school_name,
             subdomain=desired_subdomain,
+            custom_domain=custom_domain or None,
+            tenant_type=tenant_type,
             school_prefix=_school_prefix(school_name),
             status='pending',
             is_active=False,

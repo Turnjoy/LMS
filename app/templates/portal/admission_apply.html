@@ -1,55 +1,240 @@
 {% extends "base.html" %}
 
-{% block title %}Apply For Admission - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+{% block title %}Apply To Join - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .application-shell {
+        max-width: 920px;
+        margin: 24px auto;
+    }
+
+    .application-hero {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        border-radius: 8px;
+        color: #fff;
+        padding: 28px;
+        margin-bottom: 20px;
+    }
+
+    .application-hero h1,
+    .application-hero p {
+        color: #fff;
+    }
+
+    .role-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 22px;
+    }
+
+    .role-option {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 14px;
+        cursor: pointer;
+        background: #fff;
+    }
+
+    .role-option input {
+        margin-right: 8px;
+    }
+
+    .role-option:has(input:checked) {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 14%, transparent);
+    }
+
+    .role-fields {
+        display: none;
+    }
+
+    .role-fields.is-active {
+        display: block;
+    }
+
+    .subject-options {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+        max-height: 260px;
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #f8fafc;
+    }
+
+    .subject-options label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px;
+        font-weight: 500;
+    }
+
+    @media (max-width: 720px) {
+        .role-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width: 760px; margin: 20px auto;">
-    <h1>Admission Application</h1>
-    <p style="color: #666; margin: 8px 0 22px;">This is not a student portal signup. The school admin must approve the application first.</p>
+<div class="application-shell">
+    <section class="application-hero">
+        <p style="font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.82;">Application Portal</p>
+        <h1>Apply to join {{ tenant.name if tenant else 'this school' }}</h1>
+        <p style="margin-top: 8px; max-width: 680px;">Students, teachers, and parents can submit details here. An administrator will review and approve access from the Application Desk.</p>
+    </section>
 
-    <form method="POST" action="{{ url_for('auth.apply_admission') }}">
-        <div class="form-group">
-            <label for="applicant_name">Student Full Name</label>
-            <input id="applicant_name" name="applicant_name" required>
-        </div>
+    <section class="card">
+        <form method="POST" action="{{ url_for('auth.apply_admission') }}" id="applicationForm">
+            <div class="role-grid" aria-label="Choose application role">
+                <label class="role-option">
+                    <input type="radio" name="applicant_role" value="student" checked>
+                    <strong>Student</strong>
+                    <p style="color: #666; margin-top: 4px;">Request student portal access.</p>
+                </label>
+                <label class="role-option">
+                    <input type="radio" name="applicant_role" value="teacher">
+                    <strong>Teacher</strong>
+                    <p style="color: #666; margin-top: 4px;">Apply as teaching staff.</p>
+                </label>
+                <label class="role-option">
+                    <input type="radio" name="applicant_role" value="parent">
+                    <strong>Parent</strong>
+                    <p style="color: #666; margin-top: 4px;">Link to child accounts.</p>
+                </label>
+            </div>
 
-        <div class="form-group">
-            <label for="requested_class_id">Class Applying For</label>
-            <select id="requested_class_id" name="requested_class_id">
-                <option value="">Select class</option>
-                {% for class_obj in classes %}
-                <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
+            <div class="form-group">
+                <label for="applicant_name">Full Name</label>
+                <input id="applicant_name" name="applicant_name" required autocomplete="name">
+            </div>
 
-        <div class="form-group">
-            <label for="parent_name">Parent/Guardian Name</label>
-            <input id="parent_name" name="parent_name" required>
-        </div>
+            <div class="role-fields is-active" data-role-fields="student">
+                <div class="form-group">
+                    <label for="requested_class_id">Class Level</label>
+                    <select id="requested_class_id" name="requested_class_id" data-required-for="student">
+                        <option value="">Select class level</option>
+                        {% for class_obj in classes %}
+                        <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-        <div class="form-group">
-            <label for="parent_email">Parent/Guardian Email</label>
-            <input id="parent_email" name="parent_email" type="email" required>
-        </div>
+                <div class="form-group">
+                    <label for="student_parent_phone">Parent's Phone</label>
+                    <input id="student_parent_phone" name="parent_phone" data-required-for="student" autocomplete="tel">
+                </div>
 
-        <div class="form-group">
-            <label for="parent_phone">Parent/Guardian Phone</label>
-            <input id="parent_phone" name="parent_phone" required>
-        </div>
+                <div class="form-group">
+                    <label for="parent_name">Parent/Guardian Name</label>
+                    <input id="parent_name" name="parent_name" autocomplete="name">
+                </div>
 
-        <div class="form-group">
-            <label for="previous_school">Previous School</label>
-            <input id="previous_school" name="previous_school">
-        </div>
+                <div class="form-group">
+                    <label for="parent_email">Parent/Guardian Email</label>
+                    <input id="parent_email" name="parent_email" type="email" autocomplete="email">
+                </div>
+            </div>
 
-        <div class="form-group">
-            <label for="notes">Extra Notes</label>
-            <textarea id="notes" name="notes" placeholder="Tell us anything the admission office should know."></textarea>
-        </div>
+            <div class="role-fields" data-role-fields="teacher">
+                <div class="form-group">
+                    <label for="teacher_email">Email</label>
+                    <input id="teacher_email" name="applicant_email" type="email" data-required-for="teacher" autocomplete="email">
+                </div>
 
-        <button type="submit" class="btn btn-primary">Submit Application</button>
-        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">Back Home</a>
-    </form>
+                <div class="form-group">
+                    <label for="teacher_phone">Phone</label>
+                    <input id="teacher_phone" name="applicant_phone" data-required-for="teacher" autocomplete="tel">
+                </div>
+
+                <div class="form-group">
+                    <label>Registered School Subjects</label>
+                    <div class="subject-options">
+                        {% for subject in subjects %}
+                        <label>
+                            <input type="checkbox" name="subject_ids" value="{{ subject.id }}" data-required-any-for="teacher">
+                            {{ subject.name }}
+                        </label>
+                        {% else %}
+                        <p style="color: #666;">No subjects have been registered yet. Please contact the school admin.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="role-fields" data-role-fields="parent">
+                <div class="form-group">
+                    <label for="parent_applicant_phone">Phone</label>
+                    <input id="parent_applicant_phone" name="applicant_phone" data-required-for="parent" autocomplete="tel">
+                </div>
+
+                <div class="form-group">
+                    <label for="child_lookup">Student ID(s) or Child Name(s)</label>
+                    <textarea id="child_lookup" name="child_lookup" rows="4" data-required-for="parent" placeholder="Example: DEM/STU/2026/001, Chinedu Okafor"></textarea>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="notes">Extra Notes</label>
+                <textarea id="notes" name="notes" placeholder="Tell the school anything useful about this application."></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Submit Application</button>
+            <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">Back Home</a>
+        </form>
+    </section>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const form = document.getElementById('applicationForm');
+        if (!form) return;
+
+        const roleInputs = Array.from(form.querySelectorAll('input[name="applicant_role"]'));
+        const roleSections = Array.from(form.querySelectorAll('[data-role-fields]'));
+
+        function selectedRole() {
+            return roleInputs.find((input) => input.checked).value;
+        }
+
+        function syncRoleFields() {
+            const role = selectedRole();
+            roleSections.forEach((section) => {
+                const active = section.dataset.roleFields === role;
+                section.classList.toggle('is-active', active);
+                section.querySelectorAll('input, select, textarea').forEach((field) => {
+                    field.disabled = !active;
+                });
+                section.querySelectorAll('[data-required-for]').forEach((field) => {
+                    field.required = active && field.dataset.requiredFor === role;
+                });
+            });
+        }
+
+        form.addEventListener('submit', function (event) {
+            const role = selectedRole();
+            if (role === 'teacher') {
+                const checkedSubjects = form.querySelectorAll('[data-required-any-for="teacher"]:checked');
+                if (!checkedSubjects.length) {
+                    event.preventDefault();
+                    alert('Choose at least one registered school subject.');
+                }
+            }
+        });
+
+        roleInputs.forEach((input) => input.addEventListener('change', syncRoleFields));
+        syncRoleFields();
+    })();
+</script>
 {% endblock %}

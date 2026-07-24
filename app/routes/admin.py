@@ -14,6 +14,9 @@ from app.models import (
     AssignmentSubmission,
     ClassArm,
     ClassLevel,
+    Course,
+    CoursePurchase,
+    LessonVideo,
     StudentTermAccess,
     StudentTermRegistration,
     TenantPublicProfile,
@@ -31,6 +34,7 @@ from app.models import (
 from app.decorators import role_required
 from app import db
 from app.auth_utils import ensure_custom_id, generate_temporary_password
+from app.video_utils import normalize_embedded_video_url
 from sqlalchemy import or_
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -84,6 +88,57 @@ SSS_EXTRA_ELECTIVES = [
     'Insurance',
 ]
 
+ARM_PRESETS = {
+    'alphabetical': ['A', 'B', 'C'],
+    'precious_stones': ['Gold', 'Silver', 'Diamond'],
+    'moral_virtues': ['Faith', 'Hope', 'Love'],
+}
+
+CURRICULUM_LIBRARY = {
+    'primary': {
+        'label': 'Ministry Primary',
+        'subjects': [
+            'Mathematics',
+            'English Language',
+            'Basic Science and Technology',
+            'Civic Education',
+            'Social Studies',
+            'Cultural and Creative Arts',
+            'Christian Religious Studies (CRS)',
+            'Islamic Religious Studies (IRS)',
+            'Physical and Health Education',
+            'Computer Studies/ICT',
+            'Agricultural Science',
+            'Home Economics',
+        ],
+    },
+    'jss': {
+        'label': 'BECE / Junior Secondary',
+        'subjects': [
+            'Mathematics',
+            'English Language',
+            'Basic Science',
+            'Basic Technology',
+            'Business Studies',
+            'Civic Education',
+            'Social Studies',
+            'Computer Studies/ICT',
+            'Agricultural Science',
+            'Home Economics',
+            'Cultural and Creative Arts',
+            'French',
+        ],
+    },
+    'sss': {
+        'label': 'WAEC / NECO Senior Secondary',
+        'subjects': SSS_CORE_SUBJECTS
+        + SSS_TRACK_SUBJECTS['Science']
+        + SSS_TRACK_SUBJECTS['Commercial']
+        + SSS_TRACK_SUBJECTS['Humanities']
+        + SSS_EXTRA_ELECTIVES,
+    },
+}
+
 
 def _parse_list(raw_value):
     items = []
@@ -94,6 +149,52 @@ def _parse_list(raw_value):
         if value and value.lower() not in [existing.lower() for existing in items]:
             items.append(value)
     return items
+
+
+def _dedupe_names(names):
+    items = []
+    seen = set()
+    for raw_name in names or []:
+        name = (raw_name or '').strip()
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            items.append(name)
+    return items
+
+
+def _resolve_setup_arms(form):
+    arms = []
+    for preset in form.getlist('arm_presets'):
+        arms.extend(ARM_PRESETS.get(preset, []))
+    arms.extend(_parse_list(form.get('custom_arms')))
+    arms.extend(_parse_list(form.get('arms')))
+    return _dedupe_names(arms) or ['Generic']
+
+
+def _curriculum_bucket_for_level(level_name):
+    normalized = (level_name or '').lower()
+    if normalized.startswith('primary'):
+        return 'primary'
+    if normalized.startswith('jss'):
+        return 'jss'
+    if normalized.startswith('sss'):
+        return 'sss'
+    return 'primary'
+
+
+def _selected_curriculum_subjects(form):
+    selected = {
+        'primary': form.getlist('primary_subjects'),
+        'jss': form.getlist('jss_subjects'),
+        'sss': form.getlist('sss_subjects'),
+    }
+    custom_subjects = _split_setup_items(form.get('custom_subjects') or form.get('subjects'))
+    fallback = _split_setup_items('Mathematics\nEnglish Language\nCivic Education')
+    return {
+        bucket: _dedupe_names(names + custom_subjects) or fallback
+        for bucket, names in selected.items()
+    }
 
 
 def _base_class_levels_for_type(school_type):
@@ -360,6 +461,103 @@ def _split_setup_lines(raw_value):
     return [line.strip() for line in (raw_value or '').splitlines() if line.strip()]
 
 
+def _get_or_create_active_term():
+    active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
+    if active_term:
+        return active_term
+    active_term = Term(
+        tenant_id=g.current_tenant_id,
+        name='First Term',
+        session=f'{datetime.utcnow().year}/{datetime.utcnow().year + 1}',
+        is_active=True
+    )
+    db.session.add(active_term)
+    db.session.flush()
+    return active_term
+
+
+def _application_user(application):
+    if application.created_user:
+        return application.created_user
+    if application.created_student:
+        return application.created_student
+    return None
+
+
+def _pending_user_for_application(application):
+    user = _application_user(application)
+    if user:
+        return user
+
+    role = application.applicant_role or 'student'
+    email = application.applicant_email or (application.parent_email if role == 'student' else None)
+    if email:
+        existing = User.query.filter_by(tenant_id=g.current_tenant_id, email=email).first()
+        if existing:
+            application.created_user_id = existing.id
+            if role == 'student':
+                application.created_student_id = existing.id
+            return existing
+
+    user = User(
+        tenant_id=g.current_tenant_id,
+        name=application.applicant_name,
+        email=email or None,
+        phone_number=application.applicant_phone or application.parent_phone or None,
+        role=role,
+        is_approved=False,
+        is_first_login=True,
+        payment_status='unpaid' if role in ('student', 'parent') else 'paid',
+    )
+    ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+    db.session.add(user)
+    db.session.flush()
+    application.created_user_id = user.id
+    if role == 'student':
+        application.created_student_id = user.id
+    return user
+
+
+def _activate_pending_user(user):
+    password = generate_temporary_password()
+    user.is_approved = True
+    user.is_active = True
+    user.is_first_login = True
+    user.set_password(password)
+    ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+    return password
+
+
+def _child_lookup_tokens(raw_value):
+    tokens = []
+    for item in (raw_value or '').replace('\n', ',').split(','):
+        value = item.strip()
+        if value:
+            tokens.append(value)
+    return tokens
+
+
+def _find_child_students(raw_value):
+    students = []
+    seen_ids = set()
+    for token in _child_lookup_tokens(raw_value):
+        normalized = token.strip()
+        upper_token = normalized.upper()
+        student = User.query.filter(
+            User.tenant_id == g.current_tenant_id,
+            User.role == 'student',
+            or_(
+                User.custom_id == upper_token,
+                User.school_generated_id == upper_token,
+                db.func.lower(User.name) == normalized.lower()
+            )
+        ).first()
+        if student and student.id not in seen_ids:
+            students.append(student)
+            seen_ids.add(student.id)
+    return students
+
+
 def _parse_date(value):
     if not value:
         return None
@@ -521,19 +719,24 @@ def setup_wizard():
             flash('Choose Quick Automated Template Setup or Manual Custom School Setup.', 'error')
             return redirect(url_for('admin.setup_wizard'))
 
-        school_type = request.form.get('school_type') or 'both'
+        school_tiers = request.form.getlist('school_tiers')
+        if school_tiers:
+            has_primary = 'primary' in school_tiers
+            has_secondary = 'secondary' in school_tiers
+            school_type = 'both' if has_primary and has_secondary else ('primary' if has_primary else 'secondary')
+        else:
+            school_type = request.form.get('school_type') or 'both'
         if school_type not in ('primary', 'secondary', 'both', 'combined'):
             flash('Choose Primary, Secondary, or Both before completing setup.', 'error')
             return redirect(url_for('admin.setup_wizard'))
-        arms = _parse_list(request.form.get('arms')) or ['A']
-        default_subjects = 'Mathematics\nEnglish Language\nCivic Education'
-        subject_names = _split_setup_items(request.form.get('subjects')) or _split_setup_items(default_subjects)
+        arms = _resolve_setup_arms(request.form)
+        subjects_by_bucket = _selected_curriculum_subjects(request.form)
         teacher_rows = _split_setup_lines(request.form.get('teachers'))
         student_rows = _split_setup_lines(request.form.get('students'))
 
         preference.setup_mode = setup_mode
         preference.school_type = school_type
-        preference.sections = [school_type]
+        preference.sections = school_tiers or [school_type]
         preference.arms = arms
         preference.sss_tracks = ['Science', 'Humanities', 'Commercial']
         tenant = Tenant.query.get(g.current_tenant_id)
@@ -550,6 +753,8 @@ def setup_wizard():
         for sort_order, (level_name, category) in enumerate(_base_class_levels_for_type(school_type), start=1):
             level, level_created = _get_or_create_class_level(level_name, category, sort_order)
             created_levels += int(level_created)
+            bucket = _curriculum_bucket_for_level(level.name)
+            subject_names = subjects_by_bucket.get(bucket) or []
 
             for subject_name in subject_names:
                 subject = Subject.query.filter_by(
@@ -672,12 +877,102 @@ def setup_wizard():
     return render_template(
         'portal/admin_setup_wizard.html',
         preference=preference,
+        arm_presets=ARM_PRESETS,
+        curriculum_library=CURRICULUM_LIBRARY,
         primary_jss_core_subjects=PRIMARY_JSS_CORE_SUBJECTS,
         primary_jss_extra_options=PRIMARY_JSS_EXTRA_OPTIONS,
         sss_core_subjects=SSS_CORE_SUBJECTS,
         sss_track_subjects=SSS_TRACK_SUBJECTS,
         sss_extra_electives=SSS_EXTRA_ELECTIVES
     )
+
+
+@admin_bp.route('/studio', methods=['GET', 'POST'])
+@login_required
+@role_required('local_admin', 'teacher')
+def studio():
+    """Turnjoy Studio for course and embedded lesson video management."""
+    if request.method == 'POST':
+        action = request.form.get('action') or 'course'
+
+        if action == 'course':
+            title = (request.form.get('title') or '').strip()
+            if not title:
+                flash('Course title is required.', 'error')
+                return redirect(url_for('admin.studio'))
+            course = Course(
+                tenant_id=g.current_tenant_id,
+                title=title,
+                outline=request.form.get('outline') or None,
+                price=float(request.form.get('price') or 0),
+                is_active=request.form.get('is_active') == 'on',
+                created_by=current_user.id,
+            )
+            db.session.add(course)
+            db.session.commit()
+            flash('Course created.', 'success')
+            return redirect(url_for('admin.studio'))
+
+        if action in ('lesson', 'lesson_update'):
+            course_id = request.form.get('course_id')
+            course = Course.query.filter_by(id=course_id, tenant_id=g.current_tenant_id).first()
+            if not course:
+                flash('Choose a valid course.', 'error')
+                return redirect(url_for('admin.studio'))
+
+            title = (request.form.get('lesson_title') or '').strip()
+            embed_url = normalize_embedded_video_url(request.form.get('embedded_url'))
+            if not title or not embed_url:
+                flash('Lesson title and a supported YouTube, Vimeo, or Google Drive link are required.', 'error')
+                return redirect(url_for('admin.studio'))
+
+            if action == 'lesson_update':
+                lesson = LessonVideo.query.filter_by(
+                    id=request.form.get('lesson_id'),
+                    tenant_id=g.current_tenant_id,
+                    course_id=course.id
+                ).first_or_404()
+            else:
+                lesson = LessonVideo(
+                    tenant_id=g.current_tenant_id,
+                    course_id=course.id,
+                    created_by=current_user.id,
+                )
+                db.session.add(lesson)
+
+            lesson.title = title
+            lesson.description = request.form.get('description') or None
+            lesson.embedded_url = embed_url
+            lesson.sort_order = int(request.form.get('sort_order') or 0)
+            db.session.commit()
+            flash('Lesson saved.', 'success')
+            return redirect(url_for('admin.studio'))
+
+        flash('Unknown studio action.', 'error')
+        return redirect(url_for('admin.studio'))
+
+    courses = Course.query.filter_by(tenant_id=g.current_tenant_id).order_by(Course.created_at.desc()).all()
+    lessons = LessonVideo.query.filter_by(tenant_id=g.current_tenant_id).order_by(
+        LessonVideo.course_id,
+        LessonVideo.sort_order,
+        LessonVideo.created_at
+    ).all()
+    lessons_by_course = {}
+    for lesson in lessons:
+        lessons_by_course.setdefault(lesson.course_id, []).append(lesson)
+
+    return render_template('portal/studio.html', courses=courses, lessons_by_course=lessons_by_course)
+
+
+@admin_bp.route('/studio/lessons/<int:lesson_id>/delete', methods=['POST'])
+@login_required
+@role_required('local_admin', 'teacher')
+def delete_lesson(lesson_id):
+    lesson = LessonVideo.query.filter_by(id=lesson_id, tenant_id=g.current_tenant_id).first_or_404()
+    db.session.delete(lesson)
+    db.session.commit()
+    flash('Lesson deleted.', 'success')
+    return redirect(url_for('admin.studio'))
 
 
 @admin_bp.route('/class-subjects', methods=['GET', 'POST'])
@@ -824,11 +1119,12 @@ def teacher_assignments():
     )
 
 
+@admin_bp.route('/application-desk')
 @admin_bp.route('/admissions')
 @login_required
 @role_required('local_admin')
 def admissions():
-    """Review admission applications for this school."""
+    """Review self-service applications for this school."""
     status = request.args.get('status', 'pending')
     query = AdmissionApplication.query.filter_by(tenant_id=g.current_tenant_id)
     if status != 'all':
@@ -837,21 +1133,33 @@ def admissions():
     applications = query.order_by(AdmissionApplication.created_at.desc()).all()
     classes = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id)).order_by(Class.name).all()
     active_term = Term.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).first()
+    subjects = Subject.query.filter_by(tenant_id=g.current_tenant_id).order_by(Subject.name).all()
+    subject_map = {subject.id: subject for subject in subjects}
+
+    pending_students = [item for item in applications if (item.applicant_role or 'student') == 'student']
+    pending_teachers = [item for item in applications if item.applicant_role == 'teacher']
+    pending_parents = [item for item in applications if item.applicant_role == 'parent']
 
     return render_template(
         'portal/admin_admissions.html',
         applications=applications,
+        pending_students=pending_students,
+        pending_teachers=pending_teachers,
+        pending_parents=pending_parents,
         classes=classes,
+        subjects=subjects,
+        subject_map=subject_map,
         active_term=active_term,
         status=status
     )
 
 
+@admin_bp.route('/application-desk/<int:application_id>/<action>', methods=['POST'])
 @admin_bp.route('/admissions/<int:application_id>/<action>', methods=['POST'])
 @login_required
 @role_required('local_admin')
 def review_admission(application_id, action):
-    """Accept or reject an admission application."""
+    """Approve or decline a self-service application."""
     application = AdmissionApplication.query.filter_by(
         id=application_id,
         tenant_id=g.current_tenant_id
@@ -861,79 +1169,150 @@ def review_admission(application_id, action):
         flash('This application has already been reviewed.', 'error')
         return redirect(url_for('admin.admissions'))
 
-    if action == 'reject':
+    if action in ('reject', 'decline'):
         application.status = 'rejected'
         application.admin_note = request.form.get('admin_note') or None
         application.reviewed_at = datetime.utcnow()
+        pending_user = _application_user(application)
+        if pending_user and not pending_user.is_approved:
+            pending_user.is_active = False
         db.session.commit()
-        flash('Admission application rejected.', 'success')
+        flash('Application declined.', 'success')
         return redirect(url_for('admin.admissions'))
 
-    if action != 'accept':
+    if action not in ('accept', 'approve'):
         flash('Invalid review action.', 'error')
         return redirect(url_for('admin.admissions'))
 
-    email = request.form.get('student_email') or application.parent_email
-    class_id = request.form.get('class_id') or application.requested_class_id
-    term_id = request.form.get('term_id')
-    amount_due = float(request.form.get('amount_due') or 0)
+    applicant_role = application.applicant_role or 'student'
+    user = _pending_user_for_application(application)
+    if user.role != applicant_role:
+        user.role = applicant_role
+    password = _activate_pending_user(user)
+    active_term = _get_or_create_active_term()
 
-    existing = User.query.filter_by(
-        tenant_id=g.current_tenant_id,
-        email=email
-    ).first()
-    if existing:
-        flash('A user with that email already exists for this school.', 'error')
-        return redirect(url_for('admin.admissions'))
-
-    student = User(
-        tenant_id=g.current_tenant_id,
-        name=application.applicant_name,
-        email=email,
-        role='student',
-        is_approved=True,
-        is_first_login=True,
-        payment_status='unpaid'
-    )
-    ensure_custom_id(student, g.current_tenant, datetime.utcnow())
-    password = generate_temporary_password()
-    student.set_password(password)
-    db.session.add(student)
-    db.session.flush()
-
-    if class_id and term_id:
+    if applicant_role == 'student':
+        class_id = request.form.get('class_id') or application.requested_class_id
+        amount_due = float(request.form.get('amount_due') or 0)
         class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first()
-        if _admin_section() and (not class_obj or class_obj.section != _admin_section()):
+        if not class_obj:
+            db.session.rollback()
+            flash('Choose a valid class before approving this student.', 'error')
+            return redirect(url_for('admin.admissions'))
+        if _admin_section() and class_obj.section != _admin_section():
             db.session.rollback()
             flash('Selected class is outside your section workspace.', 'error')
             return redirect(url_for('admin.admissions'))
-        enrollment = StudentClass(
-            tenant_id=g.current_tenant_id,
-            student_id=student.id,
-            class_id=class_id,
-            term_id=term_id
-        )
-        db.session.add(enrollment)
 
-    if term_id:
-        access = StudentTermAccess(
+        existing_enrollment = StudentClass.query.filter_by(
             tenant_id=g.current_tenant_id,
-            student_id=student.id,
-            term_id=term_id,
-            amount_due=amount_due,
-            amount_paid=0,
-            is_paid=False,
-            portal_unlocked=False
-        )
-        db.session.add(access)
+            student_id=user.id,
+            class_id=class_obj.id,
+            term_id=active_term.id
+        ).first()
+        if not existing_enrollment:
+            db.session.add(StudentClass(
+                tenant_id=g.current_tenant_id,
+                student_id=user.id,
+                class_id=class_obj.id,
+                term_id=active_term.id
+            ))
+
+        access = StudentTermAccess.query.filter_by(
+            tenant_id=g.current_tenant_id,
+            student_id=user.id,
+            term_id=active_term.id
+        ).first()
+        if not access:
+            access = StudentTermAccess(
+                tenant_id=g.current_tenant_id,
+                student_id=user.id,
+                term_id=active_term.id,
+                amount_paid=0,
+                is_paid=False,
+                portal_unlocked=False
+            )
+            db.session.add(access)
+        access.amount_due = amount_due
+        application.created_student_id = user.id
+
+    elif applicant_role == 'teacher':
+        selected_subject_ids = application.requested_subject_ids or []
+        class_query = _apply_section_scope(Class.query.filter_by(tenant_id=g.current_tenant_id))
+        class_ids = [class_obj.id for class_obj in class_query.all()]
+        class_subjects = ClassSubject.query.filter(
+            ClassSubject.tenant_id == g.current_tenant_id,
+            ClassSubject.class_id.in_(class_ids or [0]),
+            ClassSubject.subject_id.in_(selected_subject_ids or [0])
+        ).all()
+        if not class_subjects:
+            db.session.rollback()
+            flash('No class-subject setup matches this teacher application yet.', 'error')
+            return redirect(url_for('admin.admissions'))
+        created_assignments = 0
+        for class_subject in class_subjects:
+            existing = TeacherAssignment.query.filter_by(
+                tenant_id=g.current_tenant_id,
+                teacher_id=user.id,
+                class_id=class_subject.class_id,
+                subject_id=class_subject.subject_id,
+                term_id=active_term.id
+            ).first()
+            if not existing:
+                db.session.add(TeacherAssignment(
+                    tenant_id=g.current_tenant_id,
+                    teacher_id=user.id,
+                    class_id=class_subject.class_id,
+                    subject_id=class_subject.subject_id,
+                    term_id=active_term.id
+                ))
+                created_assignments += 1
+        application.admin_note = f'Linked to {created_assignments} subject-class assignment(s).'
+
+    elif applicant_role == 'parent':
+        children = _find_child_students(application.child_lookup)
+        if not children:
+            db.session.rollback()
+            flash('No matching child student record was found. Ask the parent to provide the student ID or exact student name.', 'error')
+            return redirect(url_for('admin.admissions'))
+
+        parent = Parent.query.filter_by(tenant_id=g.current_tenant_id, user_id=user.id).first()
+        if not parent:
+            parent = Parent(
+                tenant_id=g.current_tenant_id,
+                user_id=user.id,
+                phone=user.phone_number,
+                address=None
+            )
+            db.session.add(parent)
+            db.session.flush()
+        else:
+            parent.phone = user.phone_number or parent.phone
+
+        linked_count = 0
+        for child in children:
+            existing = StudentParent.query.filter_by(
+                tenant_id=g.current_tenant_id,
+                student_id=child.id,
+                parent_id=parent.id
+            ).first()
+            if not existing:
+                db.session.add(StudentParent(
+                    tenant_id=g.current_tenant_id,
+                    student_id=child.id,
+                    parent_id=parent.id,
+                    relationship='parent'
+                ))
+                linked_count += 1
+        application.admin_note = f'Linked to {linked_count} child account(s).'
 
     application.status = 'accepted'
-    application.created_student_id = student.id
-    application.admin_note = request.form.get('admin_note') or None
+    application.created_user_id = user.id
+    application.admin_note = request.form.get('admin_note') or application.admin_note or None
     application.reviewed_at = datetime.utcnow()
 
     db.session.commit()
-    flash(f'Admission accepted. Student login is {email} with temporary password {password}.', 'success')
+    flash(f'Application approved. {user.name} can sign in with ID {user.custom_id} and temporary password {password}.', 'success')
     return redirect(url_for('admin.admissions'))
 
 

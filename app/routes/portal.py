@@ -7,6 +7,9 @@ from app.models import (
     AdmissionApplication,
     Class,
     ClassSubject,
+    Course,
+    CoursePurchase,
+    LessonVideo,
     Parent,
     PaymentGatewaySetting,
     StudentClass,
@@ -19,7 +22,7 @@ from app.models import (
     User,
 )
 from app import db
-from app.auth_utils import ensure_custom_id, password_matches, user_payment_locked
+from app.auth_utils import ensure_custom_id, generate_temporary_password, password_matches, user_payment_locked
 from app.auth_utils import live_room_name
 
 auth_bp = Blueprint('auth', __name__)
@@ -57,16 +60,13 @@ def login():
             )
         ).first()
 
-        if user and user.role not in LOCAL_ADMIN_ROLES and (identifier.upper() in {user.custom_id, user.school_generated_id}):
-            user = None
-
         if user and user_payment_locked(user, g.current_tenant):
             return _billing_lockout_response(user)
 
         # Validate credentials securely
         if user and password_matches(user, password):
-            if user.role in LOCAL_ADMIN_ROLES and not user.is_approved:
-                flash('Your school admin account is pending Turnjoy owner approval.', 'error')
+            if not user.is_approved:
+                flash('Your account application is still pending school approval.', 'error')
                 return render_template('portal/login.html', admin_exists=_admin_exists())
 
             if user.is_first_login:
@@ -300,9 +300,24 @@ def _admin_exists():
     ).first() is not None
 
 
+def _student_has_course_access(course_id):
+    if not current_user.is_authenticated:
+        return False
+    if current_user.role in LOCAL_ADMIN_ROLES or current_user.role == 'teacher':
+        return True
+    if getattr(g.current_tenant, 'tenant_type', 'formal_school') == 'formal_school' and current_user.role == 'student':
+        return True
+    return CoursePurchase.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        course_id=course_id,
+        student_id=current_user.id,
+        status='completed'
+    ).first() is not None
+
+
 @auth_bp.route('/admission/apply', methods=['GET', 'POST'])
 def apply_admission():
-    """Public admission application; does not create a portal account."""
+    """Public self-service application for students, teachers, and parents."""
     profile = TenantPublicProfile.query.filter_by(tenant_id=g.current_tenant_id).first()
 
     if profile and not profile.admission_open:
@@ -310,30 +325,112 @@ def apply_admission():
         return redirect(url_for('auth.login'))
 
     classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
+    subjects = Subject.query.filter_by(tenant_id=g.current_tenant_id).order_by(Subject.name).all()
 
     if request.method == 'POST':
-        required = ['applicant_name', 'parent_name', 'parent_email', 'parent_phone']
-        if not all(request.form.get(field, '').strip() for field in required):
+        applicant_role = (request.form.get('applicant_role') or 'student').strip().lower()
+        applicant_name = (request.form.get('applicant_name') or '').strip()
+        applicant_email = (request.form.get('applicant_email') or '').strip().lower()
+        applicant_phone = (request.form.get('applicant_phone') or '').strip()
+        requested_subject_ids = [
+            int(subject_id)
+            for subject_id in request.form.getlist('subject_ids')
+            if subject_id.isdigit()
+        ]
+
+        if applicant_role not in ('student', 'teacher', 'parent'):
+            flash('Choose Student, Teacher, or Parent before submitting.', 'error')
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+
+        required_ok = bool(applicant_name)
+        if applicant_role == 'student':
+            required_ok = required_ok and bool(request.form.get('requested_class_id')) and bool(request.form.get('parent_phone'))
+        elif applicant_role == 'teacher':
+            required_ok = required_ok and bool(applicant_email) and bool(applicant_phone) and bool(requested_subject_ids)
+        elif applicant_role == 'parent':
+            required_ok = required_ok and bool(applicant_phone) and bool(request.form.get('child_lookup'))
+
+        if not required_ok:
             flash('Please complete all required fields.', 'error')
-            return render_template('portal/admission_apply.html', classes=classes)
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+
+        if applicant_email and User.query.filter_by(tenant_id=g.current_tenant_id, email=applicant_email).first():
+            flash('That email is already registered for this school.', 'error')
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+
+        valid_subject_ids = {subject.id for subject in subjects}
+        requested_subject_ids = [subject_id for subject_id in requested_subject_ids if subject_id in valid_subject_ids]
+        if applicant_role == 'teacher' and not requested_subject_ids:
+            flash('Choose at least one registered school subject.', 'error')
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+
+        user = User(
+            tenant_id=g.current_tenant_id,
+            name=applicant_name,
+            email=applicant_email or None,
+            phone_number=applicant_phone or request.form.get('parent_phone') or None,
+            role=applicant_role,
+            is_approved=False,
+            is_first_login=True,
+            payment_status='unpaid' if applicant_role in ('student', 'parent') else 'paid',
+        )
+        ensure_custom_id(user, g.current_tenant, datetime.utcnow())
+        db.session.add(user)
+        db.session.flush()
 
         application = AdmissionApplication(
             tenant_id=g.current_tenant_id,
-            applicant_name=request.form.get('applicant_name').strip(),
-            parent_name=request.form.get('parent_name').strip(),
-            parent_email=request.form.get('parent_email').strip().lower(),
-            parent_phone=request.form.get('parent_phone').strip(),
+            applicant_role=applicant_role,
+            applicant_name=applicant_name,
+            applicant_email=applicant_email or None,
+            applicant_phone=applicant_phone or None,
+            parent_name=(request.form.get('parent_name') or applicant_name).strip(),
+            parent_email=(request.form.get('parent_email') or applicant_email or '').strip().lower(),
+            parent_phone=(request.form.get('parent_phone') or applicant_phone).strip(),
             requested_class_id=request.form.get('requested_class_id') or None,
+            requested_subject_ids=requested_subject_ids or None,
+            child_lookup=(request.form.get('child_lookup') or '').strip() or None,
             previous_school=request.form.get('previous_school') or None,
             notes=request.form.get('notes') or None,
+            created_user_id=user.id,
+            created_student_id=user.id if applicant_role == 'student' else None,
         )
         db.session.add(application)
         db.session.commit()
 
-        flash('Admission application submitted. The school will review it and contact you.', 'success')
+        flash('Application submitted. The school admin will review it from the Application Desk.', 'success')
         return redirect(url_for('public.index'))
 
-    return render_template('portal/admission_apply.html', classes=classes)
+    return render_template('portal/admission_apply.html', classes=classes, subjects=subjects)
+
+
+@auth_bp.route('/courses')
+@login_required
+def course_library():
+    courses = Course.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).order_by(Course.created_at.desc()).all()
+    purchases = CoursePurchase.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        student_id=current_user.id,
+        status='completed'
+    ).all() if current_user.role == 'student' else []
+    purchased_course_ids = {purchase.course_id for purchase in purchases}
+    if getattr(g.current_tenant, 'tenant_type', 'formal_school') == 'formal_school':
+        purchased_course_ids = {course.id for course in courses}
+    return render_template('portal/course_library.html', courses=courses, purchased_course_ids=purchased_course_ids)
+
+
+@auth_bp.route('/courses/<int:course_id>')
+@login_required
+def course_detail(course_id):
+    course = Course.query.filter_by(id=course_id, tenant_id=g.current_tenant_id, is_active=True).first_or_404()
+    if not _student_has_course_access(course.id):
+        flash('Buy this course to unlock the lesson studio.', 'error')
+        return redirect(url_for('auth.course_library'))
+    lessons = LessonVideo.query.filter_by(tenant_id=g.current_tenant_id, course_id=course.id).order_by(
+        LessonVideo.sort_order,
+        LessonVideo.created_at
+    ).all()
+    return render_template('portal/course_detail.html', course=course, lessons=lessons)
 
 
 @auth_bp.route('/portal-locked')

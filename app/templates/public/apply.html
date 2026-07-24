@@ -73,7 +73,14 @@
         <h2>School Application</h2>
         <form method="POST" action="{{ url_for('public.apply_school') }}" class="application-form" style="margin-top: 18px;">
             <label>
-                School Name
+                Tenant Type
+                <select name="tenant_type" required>
+                    <option value="formal_school">Formal School</option>
+                    <option value="course_creator">Course Creator / Tech Academy</option>
+                </select>
+            </label>
+            <label>
+                School or Academy Name
                 <input name="school_name" required maxlength="100" placeholder="Example International School">
             </label>
             <label>

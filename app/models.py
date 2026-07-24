@@ -93,6 +93,7 @@ class Tenant(db.Model):
     application_note = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     billing_type = db.Column(db.String(20), default='school_pay', nullable=False)
+    tenant_type = db.Column(db.String(30), default='formal_school', nullable=False, index=True)
     setup_completed = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -172,21 +173,28 @@ class AdmissionApplication(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    applicant_role = db.Column(db.String(20), default='student', nullable=False, index=True)
     applicant_name = db.Column(db.String(120), nullable=False)
+    applicant_email = db.Column(db.String(120), index=True)
+    applicant_phone = db.Column(db.String(30))
     parent_name = db.Column(db.String(120), nullable=False)
     parent_email = db.Column(db.String(120), nullable=False, index=True)
     parent_phone = db.Column(db.String(30), nullable=False)
     requested_class_id = db.Column(db.Integer, db.ForeignKey('classes.id'))
+    requested_subject_ids = db.Column(db.JSON)
+    child_lookup = db.Column(db.Text)
     previous_school = db.Column(db.String(160))
     notes = db.Column(db.Text)
     status = db.Column(db.String(20), default='pending', index=True)
     admin_note = db.Column(db.Text)
+    created_user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_student_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reviewed_at = db.Column(db.DateTime)
 
     tenant = db.relationship('Tenant', backref='admission_applications')
     requested_class = db.relationship('Class')
+    created_user = db.relationship('User', foreign_keys=[created_user_id])
     created_student = db.relationship('User', foreign_keys=[created_student_id])
 
 
@@ -482,6 +490,77 @@ class Subject(db.Model):
     
     def __repr__(self):
         return f'<Subject {self.name}>'
+
+
+class Course(db.Model):
+    """Sellable course catalog item owned by a tenant."""
+    __tablename__ = 'courses'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    title = db.Column(db.String(160), nullable=False)
+    outline = db.Column(db.Text)
+    price = db.Column(db.Float, default=0.0)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='courses')
+    creator = db.relationship('User', foreign_keys=[created_by])
+    lesson_videos = db.relationship('LessonVideo', backref='course', lazy='dynamic', cascade='all, delete-orphan')
+    purchases = db.relationship('CoursePurchase', backref='course', lazy='dynamic', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<Course {self.title}>'
+
+
+class LessonVideo(db.Model):
+    """Embedded external video lesson linked to a course."""
+    __tablename__ = 'lesson_videos'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False, index=True)
+    title = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text)
+    embedded_url = db.Column(db.String(500), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='lesson_videos')
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f'<LessonVideo {self.title}>'
+
+
+class CoursePurchase(db.Model):
+    """Payment intent and course access ledger for course-creator tenants."""
+    __tablename__ = 'course_purchases'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
+    buyer_name = db.Column(db.String(120), nullable=False)
+    buyer_email = db.Column(db.String(120), nullable=False, index=True)
+    buyer_phone = db.Column(db.String(30))
+    amount = db.Column(db.Float, default=0.0)
+    currency = db.Column(db.String(10), default='NGN')
+    status = db.Column(db.String(30), default='pending', nullable=False, index=True)
+    payment_reference = db.Column(db.String(120), index=True)
+    raw_payload = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime)
+
+    tenant = db.relationship('Tenant', backref='course_purchases')
+    student = db.relationship('User', foreign_keys=[student_id])
+
+    def __repr__(self):
+        return f'<CoursePurchase {self.course_id} {self.status}>'
 
 
 class Term(db.Model):

@@ -2,10 +2,50 @@
 
 {% block title %}Setup Wizard - {% if tenant_domain %}{{ tenant_domain }}{% else %}School LMS{% endif %}{% endblock %}
 
+{% block extra_css %}
+<style>
+    .setup-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+        margin-top: 12px;
+    }
+
+    .setup-option,
+    .subject-pill {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #fff;
+        padding: 12px;
+    }
+
+    .setup-option label,
+    .subject-pill label {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        font-weight: 600;
+    }
+
+    .subject-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .subject-group {
+        margin-top: 14px;
+        border-top: 1px solid var(--border-color);
+        padding-top: 14px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="card">
     <h1>School Setup Wizard</h1>
-    <p style="color: #666; margin-top: 8px;">Choose Type of Setup, then create base class levels, arms, subjects, optional users, and unlock the school portal.</p>
+    <p style="color: #666; margin-top: 8px;">Create separate class levels, class arms, curriculum subjects, optional users, and unlock the portal.</p>
 </div>
 
 <form method="POST" action="{{ url_for('admin.setup_wizard') }}" class="card">
@@ -18,29 +58,59 @@
         </select>
     </div>
 
-    <h2>2. School Type</h2>
-    <div class="form-group">
-        <label for="school_type">Choose the categories this school runs</label>
-        <select id="school_type" name="school_type" required>
-            <option value="both">Primary and Secondary</option>
-            <option value="primary">Primary Only</option>
-            <option value="secondary">Secondary Only</option>
-        </select>
+    <h2>2. Select School Tiers Operated</h2>
+    <div class="setup-grid">
+        <div class="setup-option">
+            <label>
+                <input type="checkbox" name="school_tiers" value="primary" checked>
+                <span>Nursery/Primary</span>
+            </label>
+        </div>
+        <div class="setup-option">
+            <label>
+                <input type="checkbox" name="school_tiers" value="secondary" checked>
+                <span>Secondary</span>
+            </label>
+        </div>
     </div>
 
     <h2>3. Class Arms & Streams</h2>
+    <p style="color: #666; margin-top: 6px;">Choose quick presets, type custom arms, or leave the custom field blank to use one Generic stream.</p>
+    <div class="setup-grid">
+        {% for preset_key, preset_arms in arm_presets.items() %}
+        <div class="setup-option">
+            <label>
+                <input type="checkbox" name="arm_presets" value="{{ preset_key }}" {% if preset_key == 'alphabetical' %}checked{% endif %}>
+                <span>{{ preset_key.replace('_', ' ')|title }}: {{ preset_arms|join(', ') }}</span>
+            </label>
+        </div>
+        {% endfor %}
+    </div>
     <div class="form-group">
-        <label for="arms">Arms or stream names</label>
-        <input id="arms" name="arms" value="A,B,C" placeholder="A,B,C or Gold,Diamond">
-        <p style="color: #666;">Examples: A,B,C creates Primary 1A and JSS 1B. Gold,Diamond creates Primary 1 Gold and Primary 1 Diamond.</p>
+        <label for="custom_arms">Custom / Manual Input</label>
+        <input id="custom_arms" name="custom_arms" placeholder="Science, Arts, Commercial or Generic">
     </div>
 
-    <h2>4. Subject Registration</h2>
-    <div class="form-group">
-        <label for="subjects">Subjects taught at each generated base class level</label>
-        <textarea id="subjects" name="subjects" rows="8" placeholder="Mathematics&#10;English Language&#10;Civic Education">Mathematics
-English Language
-Civic Education</textarea>
+    <h2>4. Nigerian Curriculum Subject Library</h2>
+    {% for bucket, group in curriculum_library.items() %}
+    <div class="subject-group">
+        <h3>{{ group.label }}</h3>
+        <div class="subject-list">
+            {% for subject in group.subjects %}
+            <div class="subject-pill">
+                <label>
+                    <input type="checkbox" name="{{ bucket }}_subjects" value="{{ subject }}" checked>
+                    <span>{{ subject }}</span>
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="form-group" style="margin-top: 16px;">
+        <label for="custom_subjects">Custom subjects</label>
+        <textarea id="custom_subjects" name="custom_subjects" rows="4" placeholder="Robotics&#10;Yoruba&#10;Entrepreneurship"></textarea>
     </div>
 
     <h2>5. User Import & ID Generation</h2>
