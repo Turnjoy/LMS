@@ -1108,11 +1108,16 @@ def teacher_assignments():
     if request.method == 'POST':
         teacher_id = request.form.get('teacher_id')
         class_id = request.form.get('class_id')
-        subject_id = request.form.get('subject_id')
+        subject_ids = request.form.getlist('subject_ids')
+        assign_all = request.form.get('assign_all_subjects') == 'on'
         term_id = request.form.get('term_id') or (active_term.id if active_term else None)
 
-        if not all([teacher_id, class_id, subject_id, term_id]):
-            flash('Teacher, class, subject, and term are required.', 'error')
+        if not all([teacher_id, class_id, term_id]):
+            flash('Teacher, class, and term are required.', 'error')
+            return redirect(url_for('admin.teacher_assignments'))
+
+        if not subject_ids and not assign_all:
+            flash('Please select at least one subject.', 'error')
             return redirect(url_for('admin.teacher_assignments'))
 
         teacher = User.query.filter_by(
@@ -1121,43 +1126,66 @@ def teacher_assignments():
             role='teacher'
         ).first()
         class_obj = Class.query.filter_by(id=class_id, tenant_id=g.current_tenant_id).first()
-        subject = Subject.query.filter_by(id=subject_id, tenant_id=g.current_tenant_id).first()
         term = Term.query.filter_by(id=term_id, tenant_id=g.current_tenant_id).first()
-        class_subject = ClassSubject.query.filter_by(
-            tenant_id=g.current_tenant_id,
-            class_id=class_id,
-            subject_id=subject_id
-        ).first()
 
-        if not all([teacher, class_obj, subject, term]):
-            flash('Invalid teacher, class, subject, or term for this school.', 'error')
+        if not all([teacher, class_obj, term]):
+            flash('Invalid teacher, class, or term for this school.', 'error')
             return redirect(url_for('admin.teacher_assignments'))
 
-        if not class_subject:
-            flash('That subject is not configured for the selected class arm.', 'error')
+        # If assign_all is checked, get all subjects for this class
+        if assign_all:
+            class_subjects = ClassSubject.query.filter_by(
+                tenant_id=g.current_tenant_id,
+                class_id=class_id
+            ).all()
+            subject_ids = [str(cs.subject_id) for cs in class_subjects]
+
+        # Validate each subject is configured for the class
+        valid_subjects = []
+        for subject_id in subject_ids:
+            class_subject = ClassSubject.query.filter_by(
+                tenant_id=g.current_tenant_id,
+                class_id=class_id,
+                subject_id=subject_id
+            ).first()
+            if class_subject:
+                valid_subjects.append(subject_id)
+
+        if not valid_subjects:
+            flash('No valid subjects are configured for the selected class.', 'error')
             return redirect(url_for('admin.teacher_assignments'))
 
-        existing = TeacherAssignment.query.filter_by(
-            tenant_id=g.current_tenant_id,
-            teacher_id=teacher.id,
-            class_id=class_obj.id,
-            subject_id=subject.id,
-            term_id=term.id
-        ).first()
+        # Create assignments for each valid subject
+        created_count = 0
+        skipped_count = 0
+        for subject_id in valid_subjects:
+            existing = TeacherAssignment.query.filter_by(
+                tenant_id=g.current_tenant_id,
+                teacher_id=teacher.id,
+                class_id=class_obj.id,
+                subject_id=subject_id,
+                term_id=term.id
+            ).first()
 
-        if existing:
-            flash('This teacher assignment already exists.', 'error')
-            return redirect(url_for('admin.teacher_assignments'))
+            if existing:
+                skipped_count += 1
+                continue
 
-        db.session.add(TeacherAssignment(
-            tenant_id=g.current_tenant_id,
-            teacher_id=teacher.id,
-            class_id=class_obj.id,
-            subject_id=subject.id,
-            term_id=term.id
-        ))
+            db.session.add(TeacherAssignment(
+                tenant_id=g.current_tenant_id,
+                teacher_id=teacher.id,
+                class_id=class_obj.id,
+                subject_id=subject_id,
+                term_id=term.id
+            ))
+            created_count += 1
+
         db.session.commit()
-        flash(f'{teacher.name} assigned to {subject.name} - {class_obj.name}.', 'success')
+        
+        message = f'{teacher.name} assigned to {created_count} subject(s) for {class_obj.name}.'
+        if skipped_count > 0:
+            message += f' ({skipped_count} already assigned, skipped.)'
+        flash(message, 'success')
         return redirect(url_for('admin.teacher_assignments'))
 
     terms = Term.query.filter_by(tenant_id=g.current_tenant_id).order_by(Term.created_at.desc()).all()
@@ -1178,6 +1206,63 @@ def teacher_assignments():
         assignments=assignments,
         class_subject_map=class_subject_map
     )
+
+
+@admin_bp.route('/teacher-assignments/<int:assignment_id>/delete', methods=['POST'])
+@login_required
+@role_required('local_admin')
+def delete_teacher_assignment(assignment_id):
+    """Delete a specific teacher assignment."""
+    assignment = TeacherAssignment.query.filter_by(
+        id=assignment_id,
+        tenant_id=g.current_tenant_id
+    ).first()
+    
+    if not assignment:
+        flash('Assignment not found.', 'error')
+        return redirect(url_for('admin.teacher_assignments'))
+    
+    teacher_name = assignment.teacher.name if assignment.teacher else 'Unknown'
+    subject_name = assignment.subject.name if assignment.subject else 'Unknown'
+    class_name = assignment.class_obj.name if assignment.class_obj else 'Unknown'
+    
+    db.session.delete(assignment)
+    db.session.commit()
+    
+    flash(f'Successfully unassigned {subject_name} from {teacher_name} ({class_name}).', 'success')
+    return redirect(url_for('admin.teacher_assignments'))
+
+
+@admin_bp.route('/teacher-assignments/delete-all', methods=['POST'])
+@login_required
+@role_required('local_admin')
+def delete_teacher_all_assignments():
+    """Delete all assignments for a specific teacher."""
+    teacher_id = request.form.get('teacher_id')
+    
+    if not teacher_id:
+        flash('Teacher ID is required.', 'error')
+        return redirect(url_for('admin.teacher_assignments'))
+    
+    teacher = User.query.filter_by(
+        id=teacher_id,
+        tenant_id=g.current_tenant_id,
+        role='teacher'
+    ).first()
+    
+    if not teacher:
+        flash('Teacher not found.', 'error')
+        return redirect(url_for('admin.teacher_assignments'))
+    
+    deleted_count = TeacherAssignment.query.filter_by(
+        tenant_id=g.current_tenant_id,
+        teacher_id=teacher.id
+    ).delete()
+    
+    db.session.commit()
+    
+    flash(f'Successfully removed {teacher.name} from all assignments ({deleted_count} assignment(s) deleted).', 'success')
+    return redirect(url_for('admin.teacher_assignments'))
 
 
 @admin_bp.route('/application-desk')

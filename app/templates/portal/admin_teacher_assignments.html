@@ -32,6 +32,7 @@
     <div class="form-group">
         <label for="class_id">Class Arm</label>
         <select id="class_id" name="class_id" required>
+            <option value="">Select class</option>
             {% for class_obj in classes %}
             <option value="{{ class_obj.id }}">{{ class_obj.name }}</option>
             {% endfor %}
@@ -39,13 +40,32 @@
     </div>
 
     <div class="form-group">
-        <label for="subject_id">Subject</label>
-        <select id="subject_id" name="subject_id" required>
+        <label>
+            <input type="checkbox" id="assign_all_subjects" name="assign_all_subjects">
+            Assign All Class Subjects (Primary Class Teacher)
+        </label>
+        <p style="color: #666; margin-top: 4px; font-size: 0.9em;">Check this to assign the teacher to all subjects for the selected class. For Secondary classes (JSS/SSS), leave unchecked to select specific subjects.</p>
+    </div>
+
+    <div class="form-group">
+        <label>Subjects</label>
+        
+        <div id="subjects-helper" style="color: #666; font-style: italic; padding: 12px; background: #f5f5f5; border-radius: 8px; display: block;">
+            Please select a class first to view available subjects.
+        </div>
+
+        <div id="subjects-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
             {% for subject in subjects %}
-            <option value="{{ subject.id }}">{{ subject.name }}</option>
+            <label class="subject-option" data-subject-id="{{ subject.id }}" style="display: block; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+                <input
+                    type="checkbox"
+                    name="subject_ids"
+                    value="{{ subject.id }}"
+                >
+                {{ subject.name }}
+            </label>
             {% endfor %}
-        </select>
-        <p style="color: #666; margin-top: 8px;">The backend validates this against the selected class arm before saving.</p>
+        </div>
     </div>
 
     <div class="form-group">
@@ -62,22 +82,146 @@
 </form>
 {% endif %}
 
+<script>
+const classSubjectMap = {{ class_subject_map | tojson }};
+const classSelect = document.getElementById('class_id');
+const assignAllCheckbox = document.getElementById('assign_all_subjects');
+const subjectOptions = Array.from(document.querySelectorAll('.subject-option'));
+const subjectsContainer = document.getElementById('subjects-container');
+const subjectsHelper = document.getElementById('subjects-helper');
+
+function filterSubjects() {
+    const selectedClass = classSelect.value;
+    
+    if (!selectedClass) {
+        // No class selected - hide subjects, show helper
+        subjectsContainer.style.display = 'none';
+        subjectsHelper.style.display = 'block';
+        subjectsHelper.textContent = 'Please select a class first to view available subjects.';
+        subjectOptions.forEach((option) => {
+            option.querySelector('input').checked = false;
+        });
+        assignAllCheckbox.checked = false;
+        assignAllCheckbox.disabled = true;
+        return;
+    }
+    
+    // Class selected - show subjects, hide helper
+    subjectsContainer.style.display = 'grid';
+    subjectsHelper.style.display = 'none';
+    assignAllCheckbox.disabled = false;
+    
+    const allowedSubjects = classSubjectMap[selectedClass] || [];
+    
+    subjectOptions.forEach((option) => {
+        const subjectId = Number(option.dataset.subjectId);
+        const visible = allowedSubjects.includes(subjectId);
+        option.style.display = visible ? 'block' : 'none';
+        if (!visible) {
+            option.querySelector('input').checked = false;
+        }
+    });
+}
+
+function handleAssignAllToggle() {
+    const selectedClass = classSelect.value;
+    if (!selectedClass) return;
+    
+    const allowedSubjects = classSubjectMap[selectedClass] || [];
+    
+    if (assignAllCheckbox.checked) {
+        // Select all visible subjects
+        subjectOptions.forEach((option) => {
+            const subjectId = Number(option.dataset.subjectId);
+            if (allowedSubjects.includes(subjectId)) {
+                option.querySelector('input').checked = true;
+            }
+        });
+    } else {
+        // Uncheck all subjects
+        subjectOptions.forEach((option) => {
+            option.querySelector('input').checked = false;
+        });
+    }
+}
+
+classSelect.addEventListener('change', filterSubjects);
+assignAllCheckbox.addEventListener('change', handleAssignAllToggle);
+filterSubjects();
+</script>
+{% endblock %}
+
 <div class="card">
     <h2>Current Assignments</h2>
     {% if assignments %}
-    <div style="display: grid; gap: 10px; margin-top: 14px;">
-        {% for assignment in assignments %}
-        <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
-            <strong>{{ assignment.teacher.name if assignment.teacher else 'Teacher' }}</strong>
-            <span style="color: #666;">assigned to</span>
-            {{ assignment.subject.name if assignment.subject else 'Subject' }} -
-            {{ assignment.class_obj.name if assignment.class_obj else 'Class' }}
-            <span style="color: #666;">({{ assignment.term.name if assignment.term else 'Term' }})</span>
+    <table style="width: 100%; border-collapse: collapse; margin-top: 14px;">
+        <thead>
+            <tr style="background: #f5f5f5; border-bottom: 2px solid var(--border-color);">
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Teacher</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Class</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Subject</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Term</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for assignment in assignments %}
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 12px;">{{ assignment.teacher.name if assignment.teacher else 'Unknown' }}</td>
+                <td style="padding: 12px;">{{ assignment.class_obj.name if assignment.class_obj else 'Unknown' }}</td>
+                <td style="padding: 12px;">{{ assignment.subject.name if assignment.subject else 'Unknown' }}</td>
+                <td style="padding: 12px;">{{ assignment.term.name if assignment.term else 'Unknown' }}</td>
+                <td style="padding: 12px;">
+                    <form method="POST" action="{{ url_for('admin.delete_teacher_assignment', assignment_id=assignment.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove this assignment?');">
+                        <button type="submit" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.85rem; background: #fee; color: #c33; border-color: #fcc;">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if assignments %}
+    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+        <h3>Remove All Assignments for Teacher</h3>
+        <div class="form-group" style="margin-top: 10px;">
+            <label for="remove_teacher_id">Select Teacher</label>
+            <select id="remove_teacher_id" style="max-width: 300px;">
+                <option value="">Select teacher...</option>
+                {% for teacher in teachers %}
+                <option value="{{ teacher.id }}">{{ teacher.name }}</option>
+                {% endfor %}
+            </select>
         </div>
-        {% endfor %}
+        <button onclick="removeAllAssignments()" class="btn btn-secondary" style="background: #fee; color: #c33; border-color: #fcc;">Remove All Assignments</button>
     </div>
+    {% endif %}
     {% else %}
     <p style="color: #666; margin-top: 10px;">No teacher assignments yet.</p>
     {% endif %}
 </div>
+
+<script>
+function removeAllAssignments() {
+    const teacherId = document.getElementById('remove_teacher_id').value;
+    if (!teacherId) {
+        alert('Please select a teacher first.');
+        return;
+    }
+    if (confirm('Are you sure you want to remove ALL assignments for this teacher? This action cannot be undone.')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = "{{ url_for('admin.delete_teacher_all_assignments') }}";
+        
+        const teacherInput = document.createElement('input');
+        teacherInput.type = 'hidden';
+        teacherInput.name = 'teacher_id';
+        teacherInput.value = teacherId;
+        
+        form.appendChild(teacherInput);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
 {% endblock %}
