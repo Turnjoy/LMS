@@ -22,7 +22,11 @@
     <h2>Subjects</h2>
     <p style="color: #666; margin-bottom: 14px;">If your school marked a subject as required, it will be included automatically.</p>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+    <div id="subjects-helper" style="color: #666; font-style: italic; padding: 12px; background: #f5f5f5; border-radius: 8px; display: block;">
+        Please select a class first to view available subjects.
+    </div>
+
+    <div id="subjects-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
         {% for subject in subjects %}
         <label class="subject-option" data-subject-id="{{ subject.id }}" style="display: block; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
             <input
@@ -44,15 +48,32 @@
 const subjectMap = {{ subject_map_json | tojson }};
 const classSelect = document.getElementById('class_id');
 const options = Array.from(document.querySelectorAll('.subject-option'));
+const subjectsContainer = document.getElementById('subjects-container');
+const subjectsHelper = document.getElementById('subjects-helper');
 
 function filterSubjects() {
     const selectedClass = classSelect.value;
+    
+    if (!selectedClass) {
+        // No class selected - hide subjects, show helper
+        subjectsContainer.style.display = 'none';
+        subjectsHelper.style.display = 'block';
+        subjectsHelper.textContent = 'Please select a class first to view available subjects.';
+        options.forEach((option) => {
+            option.querySelector('input').checked = false;
+        });
+        return;
+    }
+    
+    // Class selected - show subjects, hide helper
+    subjectsContainer.style.display = 'grid';
+    subjectsHelper.style.display = 'none';
+    
     const allowedSubjects = subjectMap[selectedClass] || [];
-    const hasClassSetup = allowedSubjects.length > 0;
-
+    
     options.forEach((option) => {
         const subjectId = Number(option.dataset.subjectId);
-        const visible = !hasClassSetup || allowedSubjects.includes(subjectId);
+        const visible = allowedSubjects.includes(subjectId);
         option.style.display = visible ? 'block' : 'none';
         if (!visible) {
             option.querySelector('input').checked = false;
