@@ -258,28 +258,35 @@ def reset_password_request():
                 
                 from datetime import datetime
                 import threading
+                from flask import current_app
+                
+                # Capture the real Flask app object before spawning thread
+                app = current_app._get_current_object()
+                recipient = user.email
+                tenant_data = getattr(g, 'current_tenant', None)
                 
                 def send_reset_email():
                     """Send password reset email in background thread."""
                     try:
-                        with current_app.app_context():
+                        with app.app_context():
                             msg = Message(
                                 subject='Password Reset Request',
-                                recipients=[user.email],
-                                sender=current_app.config.get('MAIL_DEFAULT_SENDER', 'noreply@example.com')
+                                recipients=[recipient],
+                                sender=app.config.get('MAIL_DEFAULT_SENDER', 'admin@turnjoylms.com.ng')
                             )
                             msg.html = render_template(
                                 'email/reset_password_email.html',
                                 user=user,
                                 reset_url=reset_url,
-                                tenant=getattr(g, 'current_tenant', None),
+                                tenant=tenant_data,
                                 current_year=datetime.now().year
                             )
                             mail.send(msg)
+                            app.logger.info(f"[BREVO SMTP SUCCESS] Reset email successfully dispatched to {recipient}")
                     except Exception as e:
                         import traceback
                         traceback.print_exc()
-                        current_app.logger.error(f'Background email send failed: {str(e)}')
+                        app.logger.error(f"[BREVO SMTP ERROR] Failed to send email to {recipient}: {e}")
                 
                 # Start email sending in background thread
                 email_thread = threading.Thread(target=send_reset_email)
