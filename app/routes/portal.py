@@ -398,6 +398,22 @@ def apply_admission():
 
     classes = Class.query.filter_by(tenant_id=g.current_tenant_id).order_by(Class.name).all()
     subjects = Subject.query.filter_by(tenant_id=g.current_tenant_id).order_by(Subject.name).all()
+    
+    # Build class-to-subject mapping for teacher applications
+    class_subjects = ClassSubject.query.filter_by(tenant_id=g.current_tenant_id).all()
+    class_subject_map = {}
+    for item in class_subjects:
+        class_subject_map.setdefault(str(item.class_id), []).append(item.subject_id)
+    
+    # Build class level to arms mapping for teacher applications
+    from app.models import ClassArm
+    class_arms = ClassArm.query.filter_by(tenant_id=g.current_tenant_id).all()
+    class_level_arm_map = {}
+    for arm in class_arms:
+        class_level_arm_map.setdefault(str(arm.class_level_id), []).append({
+            'id': arm.id,
+            'name': arm.name
+        })
 
     if request.method == 'POST':
         applicant_role = (request.form.get('applicant_role') or 'student').strip().lower()
@@ -412,29 +428,31 @@ def apply_admission():
 
         if applicant_role not in ('student', 'teacher', 'parent'):
             flash('Choose Student, Teacher, or Parent before submitting.', 'error')
-            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map), 400
 
         required_ok = bool(applicant_name)
         if applicant_role == 'student':
             required_ok = required_ok and bool(request.form.get('requested_class_id')) and bool(request.form.get('parent_phone'))
         elif applicant_role == 'teacher':
-            required_ok = required_ok and bool(applicant_email) and bool(applicant_phone) and bool(requested_subject_ids)
+            teacher_section = request.form.get('teacher_section')
+            teacher_class = request.form.get('teacher_class')
+            required_ok = required_ok and bool(applicant_email) and bool(applicant_phone) and bool(teacher_section) and bool(teacher_class) and bool(requested_subject_ids)
         elif applicant_role == 'parent':
             required_ok = required_ok and bool(applicant_phone) and bool(request.form.get('child_lookup'))
 
         if not required_ok:
             flash('Please complete all required fields.', 'error')
-            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map), 400
 
         if applicant_email and User.query.filter_by(tenant_id=g.current_tenant_id, email=applicant_email).first():
             flash('That email is already registered for this school.', 'error')
-            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map), 400
 
         valid_subject_ids = {subject.id for subject in subjects}
         requested_subject_ids = [subject_id for subject_id in requested_subject_ids if subject_id in valid_subject_ids]
         if applicant_role == 'teacher' and not requested_subject_ids:
             flash('Choose at least one registered school subject.', 'error')
-            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects), 400
+            return render_template('portal/admission_apply.html', classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map), 400
 
         user = User(
             tenant_id=g.current_tenant_id,
@@ -459,7 +477,9 @@ def apply_admission():
             parent_name=(request.form.get('parent_name') or applicant_name).strip(),
             parent_email=(request.form.get('parent_email') or applicant_email or '').strip().lower(),
             parent_phone=(request.form.get('parent_phone') or applicant_phone).strip(),
-            requested_class_id=request.form.get('requested_class_id') or None,
+            requested_class_id=request.form.get('requested_class_id') or (request.form.get('teacher_class') or None),
+            teacher_section=request.form.get('teacher_section') or None,
+            teacher_arm=request.form.get('teacher_arm') or None,
             requested_subject_ids=requested_subject_ids or None,
             child_lookup=(request.form.get('child_lookup') or '').strip() or None,
             previous_school=request.form.get('previous_school') or None,
@@ -473,7 +493,7 @@ def apply_admission():
         flash('Application submitted. The school admin will review it from the Application Desk.', 'success')
         return redirect(url_for('public.index'))
 
-    return render_template('portal/admission_apply.html', classes=classes, subjects=subjects)
+    return render_template('portal/admission_apply.html', classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map)
 
 
 @auth_bp.route('/courses')

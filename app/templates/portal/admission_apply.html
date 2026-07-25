@@ -157,10 +157,36 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="teacher_section">School Level / Section</label>
+                    <select id="teacher_section" name="teacher_section" data-required-for="teacher">
+                        <option value="">Select section</option>
+                        <option value="primary">Primary / Nursery</option>
+                        <option value="secondary">Secondary (JSS/SSS)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="teacher_class">Class</label>
+                    <select id="teacher_class" name="teacher_class" data-required-for="teacher">
+                        <option value="">Select class (choose section first)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="teacher_arm_group" style="display: none;">
+                    <label for="teacher_arm">Class Arm</label>
+                    <select id="teacher_arm" name="teacher_arm">
+                        <option value="">Select arm</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
                     <label>Registered School Subjects</label>
-                    <div class="subject-options">
+                    <div id="subjects_helper" style="color: #666; font-style: italic; padding: 12px; background: #f5f5f5; border-radius: 8px; display: block;">
+                        Please select a section and class first to view available subjects.
+                    </div>
+                    <div id="subjects_container" class="subject-options" style="display: none;">
                         {% for subject in subjects %}
-                        <label>
+                        <label class="subject-option" data-subject-id="{{ subject.id }}">
                             <input type="checkbox" name="subject_ids" value="{{ subject.id }}" data-required-any-for="teacher">
                             {{ subject.name }}
                         </label>
@@ -220,6 +246,121 @@
                     field.required = active && field.dataset.requiredFor === role;
                 });
             });
+        }
+
+        // Teacher-specific dynamic logic
+        const classesData = {{ classes | tojson }};
+        const classSubjectMap = {{ class_subject_map | tojson }};
+        const classLevelArmMap = {{ class_level_arm_map | tojson }};
+        const teacherSection = document.getElementById('teacher_section');
+        const teacherClass = document.getElementById('teacher_class');
+        const teacherArm = document.getElementById('teacher_arm');
+        const teacherArmGroup = document.getElementById('teacher_arm_group');
+        const subjectsHelper = document.getElementById('subjects_helper');
+        const subjectsContainer = document.getElementById('subjects_container');
+        const subjectOptions = Array.from(document.querySelectorAll('.subject-option'));
+
+        function filterClassesBySection() {
+            const section = teacherSection.value;
+            teacherClass.innerHTML = '<option value="">Select class</option>';
+            teacherArm.innerHTML = '<option value="">Select arm</option>';
+            teacherArmGroup.style.display = 'none';
+            
+            if (!section) {
+                resetSubjects();
+                return;
+            }
+
+            const filteredClasses = classesData.filter(c => {
+                // Use the section field from the class data
+                const classSection = (c.section || '').toLowerCase();
+                if (section === 'primary') {
+                    return classSection === 'primary';
+                } else if (section === 'secondary') {
+                    return classSection === 'secondary';
+                }
+                return false;
+            });
+
+            filteredClasses.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.id;
+                option.textContent = c.name;
+                option.dataset.classLevelId = c.class_level_id;
+                teacherClass.appendChild(option);
+            });
+        }
+
+        function handleClassChange() {
+            const classId = teacherClass.value;
+            const section = teacherSection.value;
+            
+            // Reset arms and subjects
+            teacherArm.innerHTML = '<option value="">Select arm</option>';
+            resetSubjects();
+
+            if (!classId || !section) return;
+
+            const selectedClass = classesData.find(c => c.id == classId);
+            if (!selectedClass) return;
+
+            // For secondary, show arm dropdown and populate with all arms for the class level
+            if (section === 'secondary') {
+                const classLevelId = selectedClass.class_level_id;
+                if (classLevelId && classLevelArmMap[classLevelId]) {
+                    teacherArmGroup.style.display = 'block';
+                    classLevelArmMap[classLevelId].forEach(arm => {
+                        const armOption = document.createElement('option');
+                        armOption.value = arm.name;
+                        armOption.textContent = arm.name;
+                        teacherArm.appendChild(armOption);
+                    });
+                }
+            }
+
+            // Show and filter subjects
+            subjectsHelper.style.display = 'none';
+            subjectsContainer.style.display = 'grid';
+            
+            const allowedSubjects = classSubjectMap[classId] || [];
+            
+            subjectOptions.forEach(option => {
+                const subjectId = Number(option.dataset.subjectId);
+                const visible = allowedSubjects.includes(subjectId);
+                option.style.display = visible ? 'flex' : 'none';
+                if (!visible) {
+                    option.querySelector('input').checked = false;
+                }
+            });
+
+            // For Primary: auto-select all subjects and disable checkboxes
+            if (section === 'primary') {
+                subjectOptions.forEach(option => {
+                    const subjectId = Number(option.dataset.subjectId);
+                    if (allowedSubjects.includes(subjectId)) {
+                        option.querySelector('input').checked = true;
+                        option.querySelector('input').disabled = true; // Disable for primary
+                    }
+                });
+            }
+        }
+
+        function resetSubjects() {
+            subjectsHelper.style.display = 'block';
+            subjectsHelper.textContent = 'Please select a section and class first to view available subjects.';
+            subjectsContainer.style.display = 'none';
+            subjectOptions.forEach(option => {
+                option.style.display = 'flex';
+                option.querySelector('input').checked = false;
+                option.querySelector('input').disabled = false;
+            });
+        }
+
+        if (teacherSection) {
+            teacherSection.addEventListener('change', filterClassesBySection);
+        }
+        if (teacherClass) {
+            teacherClass.addEventListener('change', handleClassChange);
         }
 
         form.addEventListener('submit', function (event) {
