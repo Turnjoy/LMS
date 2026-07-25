@@ -512,7 +512,10 @@ def create_app(config_name='default'):
     
     @app.errorhandler(500)
     def internal_error(error):
+        import traceback
         db.session.rollback()
+        traceback.print_exc()
+        current_app.logger.error(f'Internal Server Error: {str(error)}\n{traceback.format_exc()}')
         if getattr(g, 'current_tenant', None):
             return render_template('portal/error.html', error_code=500, error_title='Something went wrong'), 500
         return render_template('base.html'), 500

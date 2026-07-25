@@ -250,32 +250,40 @@ def reset_password_request():
             flash('Please provide your email address.', 'error')
             return render_template('portal/reset_request.html'), 400
         
-        user = User.query.filter(db.func.lower(User.email) == email).first()
-        if user:
-            token = user.get_reset_token()
-            reset_url = url_for('auth.reset_password', token=token, _external=True)
-            
-            msg = Message(
-                subject='Password Reset Request',
-                recipients=[user.email],
-                sender=current_app.config['MAIL_DEFAULT_SENDER']
-            )
-            msg.html = render_template(
-                'email/reset_password_email.html',
-                user=user,
-                reset_url=reset_url,
-                tenant=getattr(g, 'current_tenant', None)
-            )
-            
-            try:
-                mail.send(msg)
-                flash('A password reset link has been sent to your email. Check your inbox.', 'success')
-                return redirect(url_for('auth.login'))
-            except Exception as e:
-                flash('Failed to send email. Please contact support.', 'error')
-                current_app.logger.error(f'Email send failed: {str(e)}')
-        else:
-            flash('If an account with that email exists, a reset link has been sent.', 'info')
+        try:
+            user = User.query.filter(db.func.lower(User.email) == email).first()
+            if user:
+                token = user.get_reset_token()
+                reset_url = url_for('auth.reset_password', token=token, _external=True)
+                
+                msg = Message(
+                    subject='Password Reset Request',
+                    recipients=[user.email],
+                    sender=current_app.config.get('MAIL_DEFAULT_SENDER', 'noreply@example.com')
+                )
+                msg.html = render_template(
+                    'email/reset_password_email.html',
+                    user=user,
+                    reset_url=reset_url,
+                    tenant=getattr(g, 'current_tenant', None)
+                )
+                
+                try:
+                    mail.send(msg)
+                    flash('A password reset link has been sent to your email. Check your inbox.', 'success')
+                    return redirect(url_for('auth.login'))
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    current_app.logger.error(f'Email send failed: {str(e)}')
+                    flash('Failed to send reset email. Please try again later or contact support.', 'error')
+            else:
+                flash('If an account with that email exists, a reset link has been sent.', 'info')
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            current_app.logger.error(f'Password reset request failed: {str(e)}')
+            flash('An error occurred. Please try again later.', 'error')
     
     return render_template('portal/reset_request.html')
 
@@ -284,31 +292,38 @@ def reset_password_request():
 @auth_bp.route('/auth/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     """Handle password reset with valid token."""
-    user = User.verify_reset_token(token)
-    if not user:
-        flash('Invalid or expired reset link. Please request a new one.', 'error')
+    try:
+        user = User.verify_reset_token(token)
+        if not user:
+            flash('Invalid or expired reset link. Please request a new one.', 'error')
+            return redirect(url_for('auth.reset_password_request'))
+        
+        if request.method == 'POST':
+            password = request.form.get('password') or ''
+            confirm_password = request.form.get('confirm_password') or ''
+            
+            if len(password) < 8:
+                flash('Password must be at least 8 characters long.', 'error')
+                return render_template('portal/reset_password.html', token=token), 400
+            
+            if password != confirm_password:
+                flash('Passwords do not match.', 'error')
+                return render_template('portal/reset_password.html', token=token), 400
+            
+            user.set_password(password)
+            user.is_first_login = False
+            db.session.commit()
+            
+            flash('Your password has been reset successfully. Please sign in.', 'success')
+            return redirect(url_for('auth.login'))
+        
+        return render_template('portal/reset_password.html', token=token)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        current_app.logger.error(f'Password reset failed: {str(e)}')
+        flash('An error occurred while resetting your password. Please try again.', 'error')
         return redirect(url_for('auth.reset_password_request'))
-    
-    if request.method == 'POST':
-        password = request.form.get('password') or ''
-        confirm_password = request.form.get('confirm_password') or ''
-        
-        if len(password) < 8:
-            flash('Password must be at least 8 characters long.', 'error')
-            return render_template('portal/reset_password.html', token=token), 400
-        
-        if password != confirm_password:
-            flash('Passwords do not match.', 'error')
-            return render_template('portal/reset_password.html', token=token), 400
-        
-        user.set_password(password)
-        user.is_first_login = False
-        db.session.commit()
-        
-        flash('Your password has been reset successfully. Please sign in.', 'success')
-        return redirect(url_for('auth.login'))
-    
-    return render_template('portal/reset_password.html', token=token)
 
 
 def _role_redirect(user):
