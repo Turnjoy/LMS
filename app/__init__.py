@@ -503,6 +503,12 @@ def create_app(config_name='default'):
         """Render health check endpoint."""
         return {'status': 'ok'}, 200
     
+    # Database session cleanup to prevent memory leaks
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        """Remove database session after each request to prevent connection pool exhaustion."""
+        db.session.remove()
+
     # Error handlers
     @app.errorhandler(404)
     def not_found(error):

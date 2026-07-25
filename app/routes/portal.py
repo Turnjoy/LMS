@@ -257,28 +257,37 @@ def reset_password_request():
                 reset_url = url_for('auth.reset_password', token=token, _external=True)
                 
                 from datetime import datetime
-                msg = Message(
-                    subject='Password Reset Request',
-                    recipients=[user.email],
-                    sender=current_app.config.get('MAIL_DEFAULT_SENDER', 'noreply@example.com')
-                )
-                msg.html = render_template(
-                    'email/reset_password_email.html',
-                    user=user,
-                    reset_url=reset_url,
-                    tenant=getattr(g, 'current_tenant', None),
-                    current_year=datetime.now().year
-                )
+                import threading
                 
-                try:
-                    mail.send(msg)
-                    flash('A password reset link has been sent to your email. Check your inbox.', 'success')
-                    return redirect(url_for('auth.login'))
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    current_app.logger.error(f'Email send failed: {str(e)}')
-                    flash('Failed to send reset email. Please try again later or contact support.', 'error')
+                def send_reset_email():
+                    """Send password reset email in background thread."""
+                    try:
+                        with current_app.app_context():
+                            msg = Message(
+                                subject='Password Reset Request',
+                                recipients=[user.email],
+                                sender=current_app.config.get('MAIL_DEFAULT_SENDER', 'noreply@example.com')
+                            )
+                            msg.html = render_template(
+                                'email/reset_password_email.html',
+                                user=user,
+                                reset_url=reset_url,
+                                tenant=getattr(g, 'current_tenant', None),
+                                current_year=datetime.now().year
+                            )
+                            mail.send(msg)
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        current_app.logger.error(f'Background email send failed: {str(e)}')
+                
+                # Start email sending in background thread
+                email_thread = threading.Thread(target=send_reset_email)
+                email_thread.daemon = True
+                email_thread.start()
+                
+                flash('A password reset link has been sent to your email. Check your inbox.', 'success')
+                return redirect(url_for('auth.login'))
             else:
                 flash('If an account with that email exists, a reset link has been sent.', 'info')
         except Exception as e:

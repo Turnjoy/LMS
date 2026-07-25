@@ -250,7 +250,7 @@ def _delete_school_tree(tenant):
 
 
 def _master_dashboard_context():
-    tenants = Tenant.query.order_by(Tenant.created_at.desc()).all()
+    tenants = Tenant.query.order_by(Tenant.created_at.desc()).limit(100).all()
     tenant_data = []
     total_students = User.query.filter_by(role='student').count()
     total_schools = Tenant.query.count()
@@ -262,7 +262,7 @@ def _master_dashboard_context():
     pending_admins = User.query.filter(
         User.role.in_(LOCAL_ADMIN_ROLES),
         User.is_approved.is_(False)
-    ).order_by(User.created_at.asc()).all()
+    ).order_by(User.created_at.asc()).limit(50).all()
     for tenant in tenants:
         students = User.query.filter_by(tenant_id=tenant.id, role='student').count()
         admins = User.query.filter(
