@@ -256,6 +256,7 @@ def reset_password_request():
                 token = user.get_reset_token()
                 reset_url = url_for('auth.reset_password', token=token, _external=True)
                 
+                from datetime import datetime
                 msg = Message(
                     subject='Password Reset Request',
                     recipients=[user.email],
@@ -265,7 +266,8 @@ def reset_password_request():
                     'email/reset_password_email.html',
                     user=user,
                     reset_url=reset_url,
-                    tenant=getattr(g, 'current_tenant', None)
+                    tenant=getattr(g, 'current_tenant', None),
+                    current_year=datetime.now().year
                 )
                 
                 try:
