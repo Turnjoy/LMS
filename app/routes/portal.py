@@ -250,6 +250,13 @@ def reset_password_request():
             flash('Please provide your email address.', 'error')
             return render_template('portal/reset_request.html'), 400
         
+        from flask import current_app
+        app = current_app._get_current_object()
+        tenant = getattr(g, 'current_tenant', None)
+        
+        # Entry logging
+        app.logger.info(f"[RESET LOG] Password reset requested for email: '{email}' on Tenant ID: {tenant.id if tenant else 'None'}")
+        
         try:
             user = User.query.filter(db.func.lower(User.email) == email).first()
             if user:
@@ -258,12 +265,9 @@ def reset_password_request():
                 
                 from datetime import datetime
                 import threading
-                from flask import current_app
                 
-                # Capture the real Flask app object before spawning thread
-                app = current_app._get_current_object()
                 recipient = user.email
-                tenant_data = getattr(g, 'current_tenant', None)
+                tenant_data = tenant
                 
                 def send_reset_email():
                     """Send password reset email in background thread."""
@@ -288,6 +292,9 @@ def reset_password_request():
                         traceback.print_exc()
                         app.logger.error(f"[BREVO SMTP ERROR] Failed to send email to {recipient}: {e}")
                 
+                # Log thread spawning
+                app.logger.info(f"[RESET LOG] Spawning background thread to send reset email to '{email}'...")
+                
                 # Start email sending in background thread
                 email_thread = threading.Thread(target=send_reset_email)
                 email_thread.daemon = True
@@ -296,6 +303,7 @@ def reset_password_request():
                 flash('A password reset link has been sent to your email. Check your inbox.', 'success')
                 return redirect(url_for('auth.login'))
             else:
+                app.logger.warning(f"[RESET LOG] No user found matching email '{email}' for tenant '{tenant.name if tenant else 'Unknown'}'. Skipping email send.")
                 flash('If an account with that email exists, a reset link has been sent.', 'info')
         except Exception as e:
             import traceback
