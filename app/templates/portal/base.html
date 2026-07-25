@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Turnjoy School Portal{% endblock %}</title>
+    <title>{% block title %}{{ tenant.name if tenant else 'School Portal' }}{% endblock %}</title>
     
     <!-- Dynamic CSS variables from tenant configuration -->
     <style>
@@ -235,9 +235,11 @@
                     {% if tenant and tenant.logo_url %}
                     <img src="{{ tenant.logo_url }}" alt="School Logo" class="school-logo">
                 {% else %}
-                    <img src="{{ url_for('static', filename='images/turnjoy.png') }}" alt="Turnjoy Logo" class="school-logo">
+                    <div style="font-size: 1.8rem; font-weight: bold; color: white;">{{ tenant.name if tenant else 'School Portal' }}</div>
                 {% endif %}
-                <h1 class="school-name">{{ tenant_domain or 'Turnjoy School Portal' }}</h1>
+                {% if tenant and tenant.logo_url %}
+                <h1 class="school-name">{{ tenant.name }}</h1>
+                {% endif %}
             </div>
             <nav class="nav-links">
                 <a href="/">Home</a>
@@ -270,15 +272,7 @@
     
     <footer class="footer">
         <div class="container">
-            <p>&copy; {% if tenant_domain %}{{ tenant_domain }}{% else %}Turnjoy{% endif %} - All Rights Reserved</p>
-            <div class="contact-links">
-                <a href="mailto:support@turnjoylms.com.ng" class="contact-link">
-                    <span>✉️</span> support@turnjoylms.com.ng
-                </a>
-                <a href="https://wa.me/2349123363537?text=Hi,%20I%20need%20support%20with%20Turnjoy%20LMS" target="_blank" class="contact-link">
-                    <span>💬</span> WhatsApp Support
-                </a>
-            </div>
+            <p>&copy; {{ tenant.name if tenant else 'School Portal' }} - All Rights Reserved</p>
         </div>
     </footer>
     
