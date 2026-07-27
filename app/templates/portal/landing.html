@@ -129,10 +129,9 @@
                 {% endif %}
             </p>
             <div class="hero-actions">
-                <a href="{{ url_for('auth.apply_admission') }}" class="btn">Apply to Join</a>
-                <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">Student/Staff Sign In</a>
-                <a href="{{ url_for('auth.student_term_registration') }}" class="btn btn-secondary">Student Registration</a>
-                <a href="{{ url_for('auth.signup') }}" class="btn btn-secondary">Staff Sign Up</a>
+                <a href="{{ url_for('auth.apply', role='student') }}" class="btn">Students</a>
+                <a href="{{ url_for('auth.apply', role='teacher') }}" class="btn btn-secondary">Staff</a>
+                <a href="{{ url_for('auth.apply', role='parent') }}" class="btn btn-secondary">Parents</a>
             </div>
         </div>
 
@@ -150,8 +149,8 @@
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Sign In</button>
             </form>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px;">
-                <a href="{{ url_for('auth.signup') }}" class="btn btn-secondary">Sign Up</a>
-                <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-primary">Apply to Join</a>
+                <a href="{{ url_for('auth.apply', role='teacher') }}" class="btn btn-secondary">Staff Sign In</a>
+                <a href="{{ url_for('auth.apply', role='student') }}" class="btn btn-primary">Student Apply</a>
             </div>
         </div>
     </div>

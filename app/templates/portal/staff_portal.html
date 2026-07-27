@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Staff Portal{% endblock %}
+
+{% block extra_css %}
+<style>
+    .staff-portal {
+        max-width: 600px;
+        margin: 40px auto;
+        padding: 40px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .staff-portal h1 {
+        text-align: center;
+        color: var(--primary-color);
+        margin-bottom: 32px;
+    }
+
+    .role-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+
+    .role-card {
+        padding: 32px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .role-card:hover {
+        border-color: var(--primary-color);
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+
+    .role-card h3 {
+        color: var(--primary-color);
+        margin-bottom: 12px;
+        font-size: 1.4rem;
+    }
+
+    .role-card p {
+        color: #666;
+        margin-bottom: 20px;
+        font-size: 0.95rem;
+    }
+
+    .role-card .btn {
+        display: inline-block;
+        margin-top: 12px;
+    }
+
+    @media (max-width: 600px) {
+        .role-cards {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="staff-portal">
+    <h1>Staff Portal</h1>
+    <div class="role-cards">
+        <div class="role-card" onclick="window.location.href='{{ url_for('auth.apply', role='teacher') }}'">
+            <h3>Teacher</h3>
+            <p>Sign in or apply for teaching positions</p>
+            <a href="{{ url_for('auth.apply', role='teacher') }}" class="btn btn-primary">Teacher Portal</a>
+        </div>
+        <div class="role-card" onclick="window.location.href='{{ url_for('auth.apply', role='admin') }}'">
+            <h3>Admin</h3>
+            <p>Sign in as school administrator</p>
+            <a href="{{ url_for('auth.apply', role='admin') }}" class="btn btn-secondary">Admin Portal</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
