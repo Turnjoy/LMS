@@ -307,7 +307,7 @@ def reset_password_request():
                             msg = Message(
                                 subject='Password Reset Request',
                                 recipients=[recipient],
-                                sender=app.config.get('MAIL_DEFAULT_SENDER', 'admin@turnjoylms.com.ng')
+                                sender=("TURNJOYLMS", "support@turnjoylms.com.ng")
                             )
                             msg.html = render_template(
                                 'email/reset_password_email.html',
@@ -316,8 +316,9 @@ def reset_password_request():
                                 tenant=tenant_data,
                                 current_year=datetime.now().year
                             )
+                            app.logger.info(f"[BREVO DEBUG] Sending reset email to {recipient} via {app.config.get('MAIL_SERVER')}...")
                             mail.send(msg)
-                            app.logger.info(f"[BREVO SMTP SUCCESS] Reset email successfully dispatched to {recipient}")
+                            app.logger.info(f"[BREVO SUCCESS] Email successfully dispatched to {recipient}!")
                     except Exception as e:
                         import traceback
                         traceback.print_exc()

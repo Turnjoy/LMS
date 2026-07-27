@@ -46,7 +46,7 @@ class Config:
     MAIL_USE_SSL = False
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME', 'b32773001@smtp-brevo.com')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
-    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER', 'admin@turnjoylms.com.ng')
+    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER', 'support@turnjoylms.com.ng')
     
     @staticmethod
     def init_app(app):
