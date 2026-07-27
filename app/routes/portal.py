@@ -461,35 +461,23 @@ def _student_has_course_access(course_id):
 
 @auth_bp.route('/apply', methods=['GET'])
 def apply():
-    """Role-based portal routing for Students, Staff, and Parents."""
+    """Role-based portal routing for Students, Teachers, and Parents."""
     role = request.args.get('role', '').lower()
     
-    if role == 'student':
-        # Student Portal: Direct link to sign in or apply for admission
-        return redirect(url_for('auth.apply_admission') + '?role=student')
-    elif role == 'teacher':
-        # Staff Portal - Teacher: Direct link to teacher application
-        return redirect(url_for('auth.apply_admission') + '?role=teacher')
-    elif role == 'admin':
-        # Staff Portal - Admin: Direct link to admin sign-in
-        return redirect(url_for('auth.login'))
-    elif role == 'parent':
-        # Parent Portal: Direct link to parent sign-in or student link application
-        return redirect(url_for('auth.apply_admission') + '?role=parent')
-    elif role == 'staff':
-        # Staff Portal: Sub-selection view for Teacher and Admin
-        return render_template('portal/staff_portal.html')
-    else:
-        # Default to admission apply page if no valid role specified
-        return redirect(url_for('auth.apply_admission'))
+    # Render admission form directly with role pre-selection
+    return apply_admission(role=role)
 
 
 @auth_bp.route('/admission/apply', methods=['GET', 'POST'])
-def apply_admission():
+def apply_admission(role=None):
     """Public self-service application for students, teachers, and parents."""
     try:
         # Safely retrieve tenant from context
         tenant = getattr(g, 'current_tenant', None)
+        
+        # Get role from query parameter if not passed as argument
+        if role is None:
+            role = request.args.get('role', '').lower()
         
         profile = None
         if tenant:
@@ -598,7 +586,7 @@ def apply_admission():
             return redirect(url_for('public.index'))
 
         try:
-            return render_template('portal/admission_apply.html', tenant=tenant, classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map)
+            return render_template('portal/admission_apply.html', tenant=tenant, role=role, classes=classes, subjects=subjects, class_subject_map=class_subject_map, class_level_arm_map=class_level_arm_map)
         except Exception as e:
             current_app.logger.error(f"[PORTAL APPLY ERROR] Failed to render application page: {e}")
             import traceback

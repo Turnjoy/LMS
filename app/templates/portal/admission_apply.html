@@ -97,17 +97,17 @@
         <form method="POST" action="{{ url_for('auth.apply_admission') }}" id="applicationForm">
             <div class="role-grid" aria-label="Choose application role">
                 <label class="role-option">
-                    <input type="radio" name="applicant_role" value="student" checked>
+                    <input type="radio" name="applicant_role" value="student" {% if role == 'student' or not role %}checked{% endif %}>
                     <strong>Student</strong>
                     <p style="color: #666; margin-top: 4px;">Request student portal access.</p>
                 </label>
                 <label class="role-option">
-                    <input type="radio" name="applicant_role" value="teacher">
+                    <input type="radio" name="applicant_role" value="teacher" {% if role == 'teacher' %}checked{% endif %}>
                     <strong>Teacher</strong>
                     <p style="color: #666; margin-top: 4px;">Apply as teaching staff.</p>
                 </label>
                 <label class="role-option">
-                    <input type="radio" name="applicant_role" value="parent">
+                    <input type="radio" name="applicant_role" value="parent" {% if role == 'parent' %}checked{% endif %}>
                     <strong>Parent</strong>
                     <p style="color: #666; margin-top: 4px;">Link to child accounts.</p>
                 </label>
@@ -375,7 +375,7 @@
         });
 
         roleInputs.forEach((input) => input.addEventListener('change', syncRoleFields));
-        syncRoleFields();
+        syncRoleFields(); // Initialize on page load to show correct role fields
     })();
 </script>
 {% endblock %}
