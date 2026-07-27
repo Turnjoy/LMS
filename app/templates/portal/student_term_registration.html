@@ -8,7 +8,7 @@
     <p style="color: #666; margin-top: 8px;">Returning students register every term. Choose your class and subjects for {{ active_term.name }} - {{ active_term.session }}.</p>
 </div>
 
-<form method="POST" action="{{ url_for('auth.student_term_registration') }}" class="card">
+<form method="POST" action="{{ url_for('portal.student_term_registration') }}" class="card">
     <div class="form-group">
         <label for="class_id">Class</label>
         <select id="class_id" name="class_id" required>
@@ -41,7 +41,7 @@
     </div>
 
     <button type="submit" class="btn btn-primary" style="margin-top: 18px;">Submit Registration</button>
-    <a href="{{ url_for('auth.portal_locked') }}" class="btn btn-secondary" style="margin-top: 18px;">Payment Status</a>
+    <a href="{{ url_for('portal.portal_locked') }}" class="btn btn-secondary" style="margin-top: 18px;">Payment Status</a>
 </form>
 
 <script>

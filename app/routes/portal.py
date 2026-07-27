@@ -26,17 +26,17 @@ from app import db, mail
 from app.auth_utils import ensure_custom_id, generate_temporary_password, password_matches, user_payment_locked
 from app.auth_utils import live_room_name
 
-auth_bp = Blueprint('auth', __name__)
+portal_bp = Blueprint('portal', __name__)
 LOCAL_ADMIN_ROLES = ('school_admin', 'admin', 'primary_admin', 'secondary_admin')
 
-@auth_bp.before_request
+@portal_bp.before_request
 def require_tenant_context():
-    if request.endpoint in ['auth.forgot_id', 'auth.reset_password_request', 'auth.reset_password']:
+    if request.endpoint in ['portal.forgot_id', 'portal.reset_password_request', 'portal.reset_password']:
         return
     if not getattr(g, 'current_tenant', None):
         abort(404)
 
-@auth_bp.route('/login', methods=['GET', 'POST'])
+@portal_bp.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle tenant-scoped email authentication with admin ID compatibility."""
     if request.method == 'POST':
@@ -90,7 +90,7 @@ def login():
 
             if user.role == 'student' and _student_portal_is_locked(user):
                 flash('Your portal is locked for this term until payment is confirmed.', 'error')
-                return redirect(url_for('auth.portal_locked'))
+                return redirect(url_for('portal.portal_locked'))
             
             return redirect(_role_redirect(user))
         else:
@@ -111,8 +111,8 @@ def _billing_lockout_response(user):
     return render_template('portal/payment_required.html', payload=payload), 402
 
 
-@auth_bp.route('/change-password', methods=['POST'])
-@auth_bp.route('/auth/change-password', methods=['POST'])
+@portal_bp.route('/change-password', methods=['POST'])
+@portal_bp.route('/auth/change-password', methods=['POST'])
 def change_password():
     """Persist the first secure password and disable first-name login forever."""
     from flask import session
@@ -124,7 +124,7 @@ def change_password():
     ).first()
     if not user:
         flash('Password reset session expired. Please sign in again.', 'error')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('portal.login'))
 
     password = request.form.get('password') or ''
     confirm_password = request.form.get('confirm_password') or ''
@@ -145,7 +145,7 @@ def change_password():
     return redirect(_role_redirect(user))
 
 
-@auth_bp.route('/setup-wizard')
+@portal_bp.route('/setup-wizard')
 @login_required
 def setup_wizard_redirect():
     if current_user.role not in LOCAL_ADMIN_ROLES:
@@ -153,7 +153,7 @@ def setup_wizard_redirect():
     return redirect(url_for('admin.setup_wizard'))
 
 
-@auth_bp.route('/initial-setup', methods=['POST'])
+@portal_bp.route('/initial-setup', methods=['POST'])
 def initial_setup():
     """Create the first tenant admin from the public setup wizard."""
     tenant = getattr(g, 'current_tenant', None)
@@ -162,7 +162,7 @@ def initial_setup():
 
     if _admin_exists():
         flash('This school already has an administrator. Please sign in.', 'info')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('portal.login'))
 
     admin_name = (request.form.get('admin_name') or '').strip()
     admin_email = (request.form.get('admin_email') or '').strip().lower()
@@ -214,11 +214,11 @@ def initial_setup():
     db.session.commit()
 
     flash(f'School setup completed. Your admin ID is {admin.custom_id}. Please sign in.', 'success')
-    return redirect(url_for('auth.login'))
+    return redirect(url_for('portal.login'))
 
 
-@auth_bp.route('/forgot-id', methods=['GET', 'POST'])
-@auth_bp.route('/auth/forgot-id', methods=['GET', 'POST'])
+@portal_bp.route('/forgot-id', methods=['GET', 'POST'])
+@portal_bp.route('/auth/forgot-id', methods=['GET', 'POST'])
 def forgot_id():
     """Recover a plaintext custom ID using tenant and registered contact detail."""
     if request.method == 'POST':
@@ -240,8 +240,8 @@ def forgot_id():
     return render_template('portal/forgot_id.html')
 
 
-@auth_bp.route('/reset_password_request', methods=['GET', 'POST'])
-@auth_bp.route('/auth/reset_password_request', methods=['GET', 'POST'])
+@portal_bp.route('/reset_password_request', methods=['GET', 'POST'])
+@portal_bp.route('/auth/reset_password_request', methods=['GET', 'POST'])
 def reset_password_request():
     """Handle password reset request by email."""
     if request.method == 'POST':
@@ -286,7 +286,7 @@ def reset_password_request():
                 
                 # Generate reset URL
                 try:
-                    reset_url = url_for('auth.reset_password', token=token, _external=True)
+                    reset_url = url_for('portal.reset_password', token=token, _external=True)
                     app.logger.info(f"[RESET LOG] Reset URL generated: {reset_url}")
                 except Exception as url_error:
                     app.logger.error(f"[RESET 500 ERROR]: URL generation failed: {url_error}")
@@ -333,7 +333,7 @@ def reset_password_request():
                 email_thread.start()
                 
                 flash('A password reset link has been sent to your email. Check your inbox.', 'success')
-                return redirect(url_for('auth.login'))
+                return redirect(url_for('portal.login'))
             else:
                 app.logger.warning(f"[RESET LOG] No user found matching email '{email}' for tenant '{tenant.name}' (ID: {tenant.id}). Skipping email send.")
                 flash('If an account with that email exists, a reset link has been sent.', 'info')
@@ -345,15 +345,15 @@ def reset_password_request():
     return render_template('portal/reset_request.html')
 
 
-@auth_bp.route('/reset_password/<token>', methods=['GET', 'POST'])
-@auth_bp.route('/auth/reset_password/<token>', methods=['GET', 'POST'])
+@portal_bp.route('/reset_password/<token>', methods=['GET', 'POST'])
+@portal_bp.route('/auth/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     """Handle password reset with valid token."""
     try:
         user = User.verify_reset_token(token)
         if not user:
             flash('Invalid or expired reset link. Please request a new one.', 'error')
-            return redirect(url_for('auth.reset_password_request'))
+            return redirect(url_for('portal.reset_password_request'))
         
         if request.method == 'POST':
             password = request.form.get('password') or ''
@@ -372,7 +372,7 @@ def reset_password(token):
             db.session.commit()
             
             flash('Your password has been reset successfully. Please sign in.', 'success')
-            return redirect(url_for('auth.login'))
+            return redirect(url_for('portal.login'))
         
         return render_template('portal/reset_password.html', token=token)
     except Exception as e:
@@ -380,7 +380,7 @@ def reset_password(token):
         traceback.print_exc()
         current_app.logger.error(f'Password reset failed: {str(e)}')
         flash('An error occurred while resetting your password. Please try again.', 'error')
-        return redirect(url_for('auth.reset_password_request'))
+        return redirect(url_for('portal.reset_password_request'))
 
 
 def _role_redirect(user):
@@ -389,19 +389,19 @@ def _role_redirect(user):
     if user.role == 'teacher':
         return url_for('results.dashboard')
     if user.role == 'student':
-        return url_for('auth.student_dashboard')
+        return url_for('portal.student_dashboard')
     if user.role == 'attendant':
         return url_for('attendance.dashboard')
     if user.role == 'parent':
-        return url_for('auth.parent_dashboard')
-    return url_for('auth.login')
+        return url_for('portal.parent_dashboard')
+    return url_for('portal.login')
 
-@auth_bp.route('/logout')
+@portal_bp.route('/logout')
 @login_required
 def logout():
     """Log out the current user and redirect to login page."""
     logout_user()
-    return redirect(url_for('auth.login'))
+    return redirect(url_for('portal.login'))
 
 
 
@@ -459,7 +459,7 @@ def _student_has_course_access(course_id):
     ).first() is not None
 
 
-@auth_bp.route('/apply', methods=['GET'])
+@portal_bp.route('/apply', methods=['GET'])
 def apply():
     """Role-based portal routing for Students, Teachers, and Parents."""
     role = request.args.get('role', '').lower()
@@ -468,7 +468,7 @@ def apply():
     return apply_admission(role=role)
 
 
-@auth_bp.route('/admission/apply', methods=['GET', 'POST'])
+@portal_bp.route('/admission/apply', methods=['GET', 'POST'])
 def apply_admission(role=None):
     """Public self-service application for students, teachers, and parents."""
     try:
@@ -485,7 +485,7 @@ def apply_admission(role=None):
 
         if profile and not profile.admission_open:
             flash('Admission application is currently closed.', 'error')
-            return redirect(url_for('auth.login'))
+            return redirect(url_for('portal.login'))
 
         # Safe empty fallbacks if tenant dynamic data is uninitialized
         classes = Class.query.filter_by(tenant_id=tenant.id).order_by(Class.name).all() if tenant else []
@@ -597,10 +597,10 @@ def apply_admission(role=None):
         import traceback
         traceback.print_exc()
         flash('An error occurred while loading the application page. Please try again later.', 'error')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('portal.login'))
 
 
-@auth_bp.route('/courses')
+@portal_bp.route('/courses')
 @login_required
 def course_library():
     courses = Course.query.filter_by(tenant_id=g.current_tenant_id, is_active=True).order_by(Course.created_at.desc()).all()
@@ -615,13 +615,13 @@ def course_library():
     return render_template('portal/course_library.html', courses=courses, purchased_course_ids=purchased_course_ids)
 
 
-@auth_bp.route('/courses/<int:course_id>')
+@portal_bp.route('/courses/<int:course_id>')
 @login_required
 def course_detail(course_id):
     course = Course.query.filter_by(id=course_id, tenant_id=g.current_tenant_id, is_active=True).first_or_404()
     if not _student_has_course_access(course.id):
         flash('Buy this course to unlock the lesson studio.', 'error')
-        return redirect(url_for('auth.course_library'))
+        return redirect(url_for('portal.course_library'))
     lessons = LessonVideo.query.filter_by(tenant_id=g.current_tenant_id, course_id=course.id).order_by(
         LessonVideo.sort_order,
         LessonVideo.created_at
@@ -629,7 +629,7 @@ def course_detail(course_id):
     return render_template('portal/course_detail.html', course=course, lessons=lessons)
 
 
-@auth_bp.route('/portal-locked')
+@portal_bp.route('/portal-locked')
 @login_required
 def portal_locked():
     payment_settings = PaymentGatewaySetting.query.filter_by(tenant_id=current_user.tenant_id).first()
@@ -637,18 +637,18 @@ def portal_locked():
     return render_template('portal/portal_locked.html', payment_settings=payment_settings, active_term=active_term)
 
 
-@auth_bp.route('/student/register-term', methods=['GET', 'POST'])
+@portal_bp.route('/student/register-term', methods=['GET', 'POST'])
 @login_required
 def student_term_registration():
     """Returning student term registration with subject selection."""
     if current_user.role != 'student':
         flash('Only students can complete term registration.', 'error')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('portal.login'))
 
     active_term = Term.query.filter_by(tenant_id=current_user.tenant_id, is_active=True).first()
     if not active_term:
         flash('No active term is available for registration.', 'error')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('portal.login'))
 
     classes = Class.query.filter_by(tenant_id=current_user.tenant_id).order_by(Class.name).all()
     subjects = Subject.query.filter_by(tenant_id=current_user.tenant_id).order_by(Subject.name).all()
@@ -682,7 +682,7 @@ def student_term_registration():
 
         if not selected_subject_ids:
             flash('Please select at least one subject.', 'error')
-            return redirect(url_for('auth.student_term_registration'))
+            return redirect(url_for('portal.student_term_registration'))
 
         existing_enrollment = StudentClass.query.filter_by(
             tenant_id=current_user.tenant_id,
@@ -731,7 +731,7 @@ def student_term_registration():
 
         db.session.commit()
         flash('Term registration submitted. Portal access will open after payment confirmation.', 'success')
-        return redirect(url_for('auth.portal_locked'))
+        return redirect(url_for('portal.portal_locked'))
 
     existing_subject_ids = {
         item.subject_id for item in StudentTermRegistration.query.filter_by(
@@ -753,13 +753,13 @@ def student_term_registration():
     )
 
 
-@auth_bp.route('/student/dashboard')
+@portal_bp.route('/student/dashboard')
 @login_required
 def student_dashboard():
     """Student dashboard route."""
     if _student_portal_is_locked(current_user):
         flash('Your portal is locked for this term until payment is confirmed.', 'error')
-        return redirect(url_for('auth.portal_locked'))
+        return redirect(url_for('portal.portal_locked'))
     enrollments = StudentClass.query.filter_by(
         tenant_id=current_user.tenant_id,
         student_id=current_user.id
@@ -767,18 +767,18 @@ def student_dashboard():
     return render_template('portal/dashboard.html', student_enrollments=enrollments)
 
 
-@auth_bp.route('/parent/dashboard')
+@portal_bp.route('/parent/dashboard')
 @login_required
 def parent_dashboard():
     """Parent dashboard route."""
     if current_user.role != 'parent':
         flash('Only parents or guardians can access the parent dashboard.', 'error')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('portal.login'))
 
     return render_template('portal/dashboard.html')
 
 
-@auth_bp.route('/class/<int:class_id>/live')
+@portal_bp.route('/class/<int:class_id>/live')
 @login_required
 def live_classroom(class_id):
     """Embed a private Jitsi classroom for validated teachers and students."""
@@ -810,7 +810,7 @@ def live_classroom(class_id):
     )
 
 
-@auth_bp.route('/signup', methods=['GET', 'POST'])
+@portal_bp.route('/signup', methods=['GET', 'POST'])
 def signup():
     """Handle user registration with role selection."""
     admin_exists = _admin_exists()
@@ -876,4 +876,4 @@ def signup():
         flash(f'School admin account created. Your ID is {user.custom_id}. It is pending Turnjoy owner approval before login.', 'success')
     else:
         flash(f'Account created successfully. Your ID is {user.custom_id}. Please sign in.', 'success')
-    return redirect(url_for('auth.login'))
+    return redirect(url_for('portal.login'))

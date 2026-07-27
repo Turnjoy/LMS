@@ -164,7 +164,7 @@
     <div class="action-buttons">
         <a href="{{ url_for('results.dashboard') }}" class="btn btn-primary">Results Workspace</a>
         <a href="{{ url_for('admin.studio') }}" class="btn btn-secondary">Turnjoy Studio</a>
-        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
+        <a href="{{ url_for('portal.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
 
@@ -196,7 +196,7 @@
             <h3>{{ assignment.subject.name if assignment.subject else 'Subject' }}</h3>
             <p>{{ assignment.class_obj.name if assignment.class_obj else 'Class' }}{% if assignment.term %} - {{ assignment.term.name }} {{ assignment.term.session }}{% endif %}</p>
             {% if assignment.class_obj %}
-            <a href="{{ url_for('auth.live_classroom', class_id=assignment.class_obj.id) }}" class="btn btn-primary" style="margin-top: 10px;">Go to Class</a>
+            <a href="{{ url_for('portal.live_classroom', class_id=assignment.class_obj.id) }}" class="btn btn-primary" style="margin-top: 10px;">Go to Class</a>
             {% endif %}
         </div>
         {% endfor %}
@@ -208,12 +208,12 @@
 <div class="quick-actions">
     <h2>Student Quick Actions</h2>
     <div class="action-buttons">
-        <a href="{{ url_for('auth.student_term_registration') }}" class="btn btn-secondary">Student Registration</a>
-        <a href="{{ url_for('auth.course_library') }}" class="btn btn-primary">My Courses</a>
+        <a href="{{ url_for('portal.student_term_registration') }}" class="btn btn-secondary">Student Registration</a>
+        <a href="{{ url_for('portal.course_library') }}" class="btn btn-primary">My Courses</a>
         <a href="{{ url_for('results.get_student_results', student_id=current_user.id) }}" class="btn btn-primary">My Results</a>
         <a href="{{ url_for('attendance.get_student_attendance', student_id=current_user.id) }}" class="btn btn-secondary">My Attendance</a>
         {% if student_enrollments %}
-        <a href="{{ url_for('auth.live_classroom', class_id=student_enrollments[0].class_id) }}" class="btn btn-primary">Go to Class</a>
+        <a href="{{ url_for('portal.live_classroom', class_id=student_enrollments[0].class_id) }}" class="btn btn-primary">Go to Class</a>
         {% endif %}
     </div>
 </div>
@@ -242,7 +242,7 @@
     <h2>Attendant Quick Actions</h2>
     <div class="action-buttons">
         <a href="{{ url_for('attendance.dashboard') }}" class="btn btn-primary">Attendance Workspace</a>
-        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
+        <a href="{{ url_for('portal.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
 
@@ -269,8 +269,8 @@
 <div class="quick-actions">
     <h2>Parent Quick Actions</h2>
     <div class="action-buttons">
-        <a href="{{ url_for('auth.apply_admission') }}" class="btn btn-primary">Apply to Join</a>
-        <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">School Home</a>
+        <a href="{{ url_for('portal.apply_admission') }}" class="btn btn-primary">Apply to Join</a>
+        <a href="{{ url_for('portal.login') }}" class="btn btn-secondary">School Home</a>
     </div>
 </div>
 

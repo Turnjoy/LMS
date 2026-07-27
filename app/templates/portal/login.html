@@ -146,7 +146,7 @@
                 </div>
             </div>
 
-            <form method="POST" action="{{ url_for('auth.initial_setup') }}" id="setupWizard" class="space-y-7">
+            <form method="POST" action="{{ url_for('portal.initial_setup') }}" id="setupWizard" class="space-y-7">
                 <div class="setup-step is-active" data-step="0">
                     <div class="grid gap-5">
                         <div>
@@ -195,7 +195,7 @@
                 <div class="flex flex-col gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
                     <button type="button" class="tj-button tj-button-secondary" data-prev-step hidden>Back</button>
                     <div class="flex flex-col gap-3 sm:ml-auto sm:flex-row">
-                        <a href="{{ url_for('auth.apply_admission') }}" class="tj-button tj-button-secondary">Apply to Join</a>
+                        <a href="{{ url_for('portal.apply_admission') }}" class="tj-button tj-button-secondary">Apply to Join</a>
                         <button type="button" class="tj-button tj-button-primary" data-next-step>Continue</button>
                         <button type="submit" class="tj-button tj-button-primary" data-submit-setup hidden>Complete Setup</button>
                     </div>
@@ -229,7 +229,7 @@
                     <p class="mt-2 text-slate-600">Use your email address or school-generated ID.</p>
                 </div>
 
-                <form method="POST" action="{{ url_for('auth.login') }}" class="space-y-5">
+                <form method="POST" action="{{ url_for('portal.login') }}" class="space-y-5">
                     <div>
                         <label for="login_email" class="mb-2 block text-sm font-bold text-slate-700">Email Address or School ID</label>
                         <input id="login_email" name="email" type="text" class="tj-field" placeholder="name@school.edu or SCH/ADM/2026/001" required autocomplete="username">
@@ -242,9 +242,9 @@
 
                     <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
                         <button type="submit" class="tj-button tj-button-primary sm:min-w-36">Sign In</button>
-                        <a href="{{ url_for('auth.reset_password_request') }}" class="tj-button tj-button-secondary">Forgot Password</a>
-                        <a href="{{ url_for('auth.forgot_id') }}" class="tj-button tj-button-secondary">Forgot School ID</a>
-                        <a href="{{ url_for('auth.apply_admission') }}" class="tj-button tj-button-secondary">Apply to Join</a>
+                        <a href="{{ url_for('portal.reset_password_request') }}" class="tj-button tj-button-secondary">Forgot Password</a>
+                        <a href="{{ url_for('portal.forgot_id') }}" class="tj-button tj-button-secondary">Forgot School ID</a>
+                        <a href="{{ url_for('portal.apply_admission') }}" class="tj-button tj-button-secondary">Apply to Join</a>
                     </div>
                 </form>
             </div>

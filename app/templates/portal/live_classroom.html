@@ -17,7 +17,7 @@
             <h1>{{ class_obj.name }}</h1>
             <p style="color: #666;">Live classroom</p>
         </div>
-        <a href="{{ url_for('auth.student_dashboard' if current_user.role == 'student' else 'results.dashboard') }}" class="btn btn-secondary">Back</a>
+        <a href="{{ url_for('portal.student_dashboard' if current_user.role == 'student' else 'results.dashboard') }}" class="btn btn-secondary">Back</a>
     </div>
     <div id="jitsi-classroom"></div>
 </div>

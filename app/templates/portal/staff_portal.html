@@ -69,15 +69,15 @@
 <div class="staff-portal">
     <h1>Staff Portal</h1>
     <div class="role-cards">
-        <div class="role-card" onclick="window.location.href='{{ url_for('auth.apply', role='teacher') }}'">
+        <div class="role-card" onclick="window.location.href='{{ url_for('portal.apply', role='teacher') }}'">
             <h3>Teacher</h3>
             <p>Sign in or apply for teaching positions</p>
-            <a href="{{ url_for('auth.apply', role='teacher') }}" class="btn btn-primary">Teacher Portal</a>
+            <a href="{{ url_for('portal.apply', role='teacher') }}" class="btn btn-primary">Teacher Portal</a>
         </div>
-        <div class="role-card" onclick="window.location.href='{{ url_for('auth.apply', role='admin') }}'">
+        <div class="role-card" onclick="window.location.href='{{ url_for('portal.apply', role='admin') }}'">
             <h3>Admin</h3>
             <p>Sign in as school administrator</p>
-            <a href="{{ url_for('auth.apply', role='admin') }}" class="btn btn-secondary">Admin Portal</a>
+            <a href="{{ url_for('portal.apply', role='admin') }}" class="btn btn-secondary">Admin Portal</a>
         </div>
     </div>
 </div>

@@ -94,7 +94,7 @@
     </section>
 
     <section class="card">
-        <form method="POST" action="{{ url_for('auth.apply_admission') }}" id="applicationForm">
+        <form method="POST" action="{{ url_for('portal.apply_admission') }}" id="applicationForm">
             <div class="role-grid" aria-label="Choose application role">
                 <label class="role-option">
                     <input type="radio" name="applicant_role" value="student" {% if role == 'student' or not role %}checked{% endif %}>

@@ -7,7 +7,7 @@
     <h1>Recover School ID</h1>
     {% if recovered_custom_id %}
         <p style="font-size: 1.2rem; margin-top: 16px;">Your school ID is <strong>{{ recovered_custom_id }}</strong></p>
-        <a href="{{ url_for('auth.login') }}" class="btn btn-primary" style="margin-top: 16px;">Sign In</a>
+        <a href="{{ url_for('portal.login') }}" class="btn btn-primary" style="margin-top: 16px;">Sign In</a>
     {% else %}
         <form method="POST" style="margin-top: 18px;">
             <div class="form-group">

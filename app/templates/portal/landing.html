@@ -129,15 +129,15 @@
                 {% endif %}
             </p>
             <div class="hero-actions">
-                <a href="{{ url_for('auth.apply', role='student') }}" class="btn">Student Admission</a>
-                <a href="{{ url_for('auth.apply', role='teacher') }}" class="btn btn-secondary">Teacher Application</a>
-                <a href="{{ url_for('auth.apply', role='parent') }}" class="btn btn-secondary">Parent Registration</a>
+                <a href="{{ url_for('portal.apply', role='student') }}" class="btn">Student Admission</a>
+                <a href="{{ url_for('portal.apply', role='teacher') }}" class="btn btn-secondary">Teacher Application</a>
+                <a href="{{ url_for('portal.apply', role='parent') }}" class="btn btn-secondary">Parent Registration</a>
             </div>
         </div>
 
         <div class="signin-panel">
             <h2>Portal Sign In</h2>
-            <form method="POST" action="{{ url_for('auth.login') }}">
+            <form method="POST" action="{{ url_for('portal.login') }}">
                 <div class="form-group">
                     <label for="email">Email Address</label>
                     <input id="email" name="email" type="email" required autocomplete="email">
@@ -149,8 +149,8 @@
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Sign In</button>
             </form>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px;">
-                <a href="{{ url_for('auth.login') }}" class="btn btn-secondary">Sign In</a>
-                <a href="{{ url_for('auth.apply', role='student') }}" class="btn btn-primary">Apply Now</a>
+                <a href="{{ url_for('portal.login') }}" class="btn btn-secondary">Sign In</a>
+                <a href="{{ url_for('portal.apply', role='student') }}" class="btn btn-primary">Apply Now</a>
             </div>
         </div>
     </div>

@@ -102,7 +102,7 @@
                     <p class="mt-2 text-slate-600">Enter your email address to receive a reset link.</p>
                 </div>
 
-                <form method="POST" action="{{ url_for('auth.reset_password_request') }}" class="space-y-5">
+                <form method="POST" action="{{ url_for('portal.reset_password_request') }}" class="space-y-5">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                     <div>
                         <label for="email" class="mb-2 block text-sm font-bold text-slate-700">Email Address</label>
@@ -111,7 +111,7 @@
 
                     <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
                         <button type="submit" class="tj-button tj-button-primary sm:min-w-36">Send Reset Link</button>
-                        <a href="{{ url_for('auth.login') }}" class="tj-button tj-button-secondary">Back to Login</a>
+                        <a href="{{ url_for('portal.login') }}" class="tj-button tj-button-secondary">Back to Login</a>
                     </div>
                 </form>
             </div>

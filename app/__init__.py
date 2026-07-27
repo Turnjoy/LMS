@@ -333,7 +333,7 @@ def create_app(config_name='default'):
     # Initialize Flask-Login
     login_manager = LoginManager()
     login_manager.init_app(app)
-    login_manager.login_view = 'auth.login' # type: ignore
+    login_manager.login_view = 'portal.login' # type: ignore
     login_manager.login_message = 'Please log in to access this page.'
     
     @login_manager.user_loader
@@ -344,7 +344,7 @@ def create_app(config_name='default'):
     
     # Register blueprints
     from app.routes.public import public_bp
-    from app.routes.portal import auth_bp as portal_auth_bp
+    from app.routes.portal import portal_bp
     from app.routes.admin import admin_bp
     from app.routes.results import results_bp
     from app.routes.attendance import attendance_bp
@@ -353,7 +353,7 @@ def create_app(config_name='default'):
     from app.routes.sync import sync_bp
     
     app.register_blueprint(public_bp)
-    app.register_blueprint(portal_auth_bp)
+    app.register_blueprint(portal_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(results_bp)
     app.register_blueprint(attendance_bp)
