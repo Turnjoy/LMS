@@ -103,7 +103,7 @@
                 </div>
 
                 <form method="POST" action="{{ url_for('auth.reset_password_request') }}" class="space-y-5">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                     <div>
                         <label for="email" class="mb-2 block text-sm font-bold text-slate-700">Email Address</label>
                         <input id="email" name="email" type="email" class="tj-field" placeholder="name@school.edu" required autocomplete="email">
