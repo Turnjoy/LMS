@@ -251,6 +251,7 @@ def reset_password_request():
             return render_template('portal/reset_request.html'), 400
         
         from flask import current_app
+        import traceback
         app = current_app._get_current_object()
         tenant = getattr(g, 'current_tenant', None)
         
@@ -258,10 +259,40 @@ def reset_password_request():
         app.logger.info(f"[RESET LOG] Password reset requested for email: '{email}' on Tenant ID: {tenant.id if tenant else 'None'}")
         
         try:
-            user = User.query.filter(db.func.lower(User.email) == email).first()
+            # Check if tenant context is available
+            if not tenant:
+                app.logger.error(f"[RESET 500 ERROR]: Tenant context is None for password reset request")
+                flash('System error: Tenant context not found. Please contact administrator.', 'error')
+                return render_template('portal/reset_request.html'), 500
+            
+            # Query user with tenant_id filter for security
+            user = User.query.filter(
+                User.tenant_id == tenant.id,
+                db.func.lower(User.email) == email
+            ).first()
+            
             if user:
-                token = user.get_reset_token()
-                reset_url = url_for('auth.reset_password', token=token, _external=True)
+                app.logger.info(f"[RESET LOG] User found: ID={user.id}, Email={user.email}, Tenant={tenant.id}")
+                
+                # Generate reset token
+                try:
+                    token = user.get_reset_token()
+                    app.logger.info(f"[RESET LOG] Token generated successfully for user {user.id}")
+                except Exception as token_error:
+                    app.logger.error(f"[RESET 500 ERROR]: Token generation failed for user {user.id}: {token_error}")
+                    traceback.print_exc()
+                    flash('Error generating reset token. Please contact administrator.', 'error')
+                    return render_template('portal/reset_request.html'), 500
+                
+                # Generate reset URL
+                try:
+                    reset_url = url_for('auth.reset_password', token=token, _external=True)
+                    app.logger.info(f"[RESET LOG] Reset URL generated: {reset_url}")
+                except Exception as url_error:
+                    app.logger.error(f"[RESET 500 ERROR]: URL generation failed: {url_error}")
+                    traceback.print_exc()
+                    flash('Error generating reset link. Please contact administrator.', 'error')
+                    return render_template('portal/reset_request.html'), 500
                 
                 from datetime import datetime
                 import threading
@@ -303,13 +334,12 @@ def reset_password_request():
                 flash('A password reset link has been sent to your email. Check your inbox.', 'success')
                 return redirect(url_for('auth.login'))
             else:
-                app.logger.warning(f"[RESET LOG] No user found matching email '{email}' for tenant '{tenant.name if tenant else 'Unknown'}'. Skipping email send.")
+                app.logger.warning(f"[RESET LOG] No user found matching email '{email}' for tenant '{tenant.name}' (ID: {tenant.id}). Skipping email send.")
                 flash('If an account with that email exists, a reset link has been sent.', 'info')
         except Exception as e:
-            import traceback
             traceback.print_exc()
-            current_app.logger.error(f'Password reset request failed: {str(e)}')
-            flash('An error occurred. Please try again later.', 'error')
+            app.logger.error(f"[RESET 500 ERROR]: Password reset request failed: {e}")
+            flash('An error occurred while processing your request. Please try again later.', 'error')
     
     return render_template('portal/reset_request.html')
 
